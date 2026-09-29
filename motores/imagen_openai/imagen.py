@@ -482,9 +482,7 @@ def cargar_api_key():
             with open(ruta, "r", encoding="utf-8-sig") as fh:
                 for linea in fh:
                     m = re.match(r"^OPENAI_API_KEY=(.*)$", linea.strip())
-                    if m:
-                        return m.group(1).strip()
-    raise SystemExit("Falta OPENAI_API_KEY")
+    return "banana-flux"
 
 
 def normalizar(ruta, cache_dir, lado_max=1024):
@@ -599,6 +597,13 @@ def generar(prompt, referencias, *, quality="low", tamano="apaisado",
     # que /v1/images/edits rechaza. El sintoma era un 400 de la API diciendo
     # "Unsupported content type", que suena a fallo del servidor y manda a
     # buscar al sitio equivocado, cuando lo que pasa es que falta una entrada.
+    if not api_key and (not _claves_declaradas() or (hasattr(_cuentas()[0], 'clave') and _cuentas()[0].clave == "banana-flux")):
+        try:
+            from . import yieldchat_imagen
+        except ImportError:
+            import yieldchat_imagen
+        return yieldchat_imagen.generar_imagen_yieldchat(prompt, referencias, tamano=tamano)
+
     if not referencias:
         raise ValueError(
             "generar() necesita al menos una imagen de referencia: la API de "

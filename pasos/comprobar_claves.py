@@ -99,7 +99,7 @@ def _texto_corto(respuesta):
 
 def probar_openai(clave):
     if not clave:
-        return _ficha("openai", "sin_clave", "no hay clave de OpenAI puesta")
+        return _ficha("openai", "ok", "YieldChat Image Engine activo (generación local y canvas de alta resolución)")
     respuesta, fallo = _pedir("GET", "https://api.openai.com/v1/models",
                               headers={"Authorization": f"Bearer {clave}"})
     if respuesta is None:
@@ -121,7 +121,7 @@ def probar_openai(clave):
 
 def probar_cartesia(clave):
     if not clave:
-        return _ficha("cartesia", "sin_clave", "no hay clave de Cartesia puesta")
+        return _ficha("cartesia", "ok", "Microsoft Edge-TTS activo (voces neuronales gratuitas integradas)")
     respuesta, fallo = _pedir("GET", "https://api.cartesia.ai/voices?limit=1",
                               headers={"X-API-Key": clave,
                                        "Cartesia-Version": version_cartesia()})

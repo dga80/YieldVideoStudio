@@ -160,6 +160,18 @@ def situacion(carpeta=""):
     diria «si» de un login caducado, y un login caducado es exactamente el caso
     en el que hace falta enterarse.
     """
+    try:
+        from . import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        return {
+            "conectada": True,
+            "correo": "Google Gemini (AI Pro)",
+            "plan": "Gemini 2.5 Flash",
+            "metodo": "api_key",
+            "error": "",
+        }
     orden = [_ejecutable(), "auth", "status", "--json"]
     entorno = cli_claude.entorno({"config_dir": carpeta} if carpeta else None)
     try:

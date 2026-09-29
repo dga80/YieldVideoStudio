@@ -751,11 +751,16 @@ def _instruccion(transcript, metadatos, brief, anterior, opciones, correcciones,
         "no tenia. Si necesitas recordar un dato para lo que viene, recuerdalo "
         "en tres palabras y de pasada, nunca con el tono con el que se revela "
         "algo por primera vez.",
-        "13. EL GANCHO ES UNO Y VA AL PRINCIPIO. El tono de entrada --la "
-        "promesa, la sorpresa, el «esto es mas grande de lo que parece»-- se "
-        "usa en los dos primeros bloques y no vuelve a aparecer. A mitad de "
-        "video ese tono no promete nada: repite, y se nota.",
-        "14. El titulo es para el video, no para el guion: corto y concreto.",
+        "13. EL GANCHO ES UNO Y VA EN LOS PRIMEROS 30 SEGUNDOS (LÓGICA YIELDCHAT): "
+        "Cumple la promesa del título en la primera frase y eleva las apuestas de inmediato "
+        "(¿por qué esto importa ahora?, ¿qué está en juego?). PROHIBIDO terminantemente "
+        "cualquier saludo o intro vacía: nada de «Hola a todos», «bienvenidos a este vídeo», "
+        "«en este canal hoy vamos a ver...». Entra directo al conflicto o a la paradoja. "
+        "El tono de entrada se usa exclusivamente en los primeros bloques y no se repite.",
+        "14. BUCLES DE CURIOSIDAD (OPEN LOOPS ENTRE SECCIONES): Al final de cada tramo o sección, "
+        "remata el punto pero deja un cabo suelto o una pregunta implícita en la mente del oyente "
+        "que haga inevitable escuchar el siguiente tramo.",
+        "15. El título es para el vídeo, no para el guion: corto, magnético y concreto.",
     ])
 
     if opciones["anotaciones_voz"]:

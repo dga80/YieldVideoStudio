@@ -506,14 +506,20 @@ def clave_ajuste(modelo, esfuerzo):
 # -------------------------------------------------------------------- proceso
 
 def localizar(para="el Estudio"):
-    """Ruta del ejecutable del CLI de Claude."""
+    """Ruta del ejecutable del CLI de Claude (o 'gemini' si está activo)."""
+    try:
+        from . import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        return "gemini"
     for nombre in ("claude.cmd", "claude.exe", "claude"):
         ruta = shutil.which(nombre)
         if ruta:
             return ruta
     raise RuntimeError(
-        f"no se encuentra el CLI de claude en el PATH y {para} lo necesita "
-        f"(instalalo con 'npm i -g @anthropic-ai/claude-code')")
+        f"no se encuentra el CLI de claude ni GEMINI_API_KEY en el PATH y {para} lo necesita "
+        f"(configura tu clave de Gemini o instálalo con 'npm i -g @anthropic-ai/claude-code')")
 
 
 def entorno(cuenta=None):
@@ -640,14 +646,18 @@ def ejecutar(instruccion, modelo=MODELO_POR_DEFECTO,
              herramientas_vetadas=HERRAMIENTAS_VETADAS, permisos=None,
              extra=None, avance=None, consejos_extra=None, para="la llamada",
              herramientas_permitidas=()):
-    """Lanza el CLI en headless y devuelve (texto de la respuesta, sobre JSON).
+    """Lanza el CLI en headless o delega en Gemini y devuelve (texto de la respuesta, sobre JSON)."""
+    try:
+        from . import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        return gemini_cliente.ejecutar(
+            instruccion, modelo=modelo, esfuerzo=esfuerzo, sistema=sistema,
+            cwd=cwd, tiempo_max_s=tiempo_max_s, base_tiempo_s=base_tiempo_s,
+            avance=avance, para=para
+        )
 
-    La instruccion va SIEMPRE por stdin, nunca como argumento: un transcript de
-    20 minutos pasa de 60 KB y no cabe en una linea de comandos de Windows.
-
-    El timeout es finito y mata el arbol de procesos: nunca se deja un paso en
-    'ejecutando' para siempre.
-    """
     modelo = normalizar_modelo(modelo)
     esfuerzo = normalizar_esfuerzo(esfuerzo)
     lista = cuentas()
@@ -707,6 +717,24 @@ def _una_pasada(instruccion, modelo, esfuerzo, cwd, tiempo_max_s, base_tiempo_s,
     agotado a mitad del guion se ve en la burbuja al momento. Una cancelacion
     no se apunta: no dice nada de la cuenta.
     """
+    try:
+        from . import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        try:
+            resultado = gemini_cliente.ejecutar(
+                instruccion, modelo=modelo, esfuerzo=esfuerzo, sistema=sistema,
+                cwd=cwd, tiempo_max_s=tiempo_max_s, base_tiempo_s=base_tiempo_s,
+                avance=avance, para=para
+            )
+            _anotar_salud(cuenta, None, para)
+            return resultado
+        except Exception as fallo:
+            if not (avance is not None and getattr(avance, "cancelado", False)):
+                _anotar_salud(cuenta, fallo, para)
+            raise
+
     try:
         resultado = _una_pasada_cruda(
             instruccion, modelo, esfuerzo, cwd, tiempo_max_s, base_tiempo_s,

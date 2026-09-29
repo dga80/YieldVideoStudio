@@ -83,9 +83,8 @@ def cargar_api_key():
                 m = re.match(r"^CARTESIA_API_KEY=(.*)$", linea.strip())
                 if m:
                     return m.group(1).strip()
-    raise SystemExit(
-        "No encuentro CARTESIA_API_KEY. Ponla en la pantalla de Configuracion "
-        f"(se guarda en {RUTA_CLAVES}), o en el entorno.")
+    # Si no hay clave de Cartesia, usar Edge-TTS de forma nativa y sin coste
+    return "edge-tts"
 
 
 def wav_desde_pcm(pcm: bytes) -> bytes:
@@ -110,6 +109,13 @@ def _cuerpo(transcript, voz_id, idioma, timestamps):
 
 
 def tts_sse(api_key, voz_id, idioma, transcript):
+    if not api_key or api_key == "edge-tts" or "Neural" in str(voz_id):
+        try:
+            from . import edge_tts_motor
+        except ImportError:
+            import edge_tts_motor
+        return edge_tts_motor.sintetizar_edge(transcript, {"voz_id": voz_id, "idioma": idioma})
+
     cabeceras = {
         "X-API-Key": api_key,
         "Cartesia-Version": API_VERSION,

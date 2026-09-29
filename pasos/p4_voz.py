@@ -820,10 +820,12 @@ def _toma_por_contexto(trozos, cfg, progreso):
 
 
 def _toma_real(texto, cfg, progreso):
-    """Llamada SSE a Cartesia con __experimental_controls."""
-    # cargar_api_key aborta con SystemExit, que dentro de un hilo del gestor de
-    # trabajos no lo recoge nadie
+    """Llamada de síntesis: usa Edge-TTS si no hay Cartesia o si se solicitó voz de Edge."""
     api_key = comun.llamar_motor(motor.cargar_api_key)
+    if not api_key or api_key == "edge-tts" or "Neural" in str(cfg.get("voz_id")):
+        from motores.voz_cartesia import edge_tts_motor
+        return edge_tts_motor.sintetizar_edge(texto, cfg, progreso)
+
     cabeceras = {
         "X-API-Key": api_key,
         "Cartesia-Version": motor.API_VERSION,

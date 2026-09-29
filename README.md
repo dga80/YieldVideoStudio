@@ -1,8 +1,12 @@
-# AS Video Studio
+# Yield Video Studio
 
-Convierte **lo que escribas** —unas notas, un artículo pegado, una cronología, o
-tu propio guion— en un vídeo de animación narrada, pasando por ocho fases con
-revisión humana entre ellas.
+Convierte **lo que escribas** —unas notas, un artículo pegado, una cronología, o tu propio guion— en un vídeo de animación narrada profesional, aplicando la arquitectura de alta retención de **YieldChat** y ejecutándose con un stack local de alto rendimiento y bajo coste:
+
+- **Cerebro y Guion:** Google Gemini (`gemini-2.5-flash` / `gemini-3.8-flash`) con técnicas de retención probadas (gancho inicial de 30s sin relleno, bucles abiertos entre secciones y llamadas a la acción psicológicas).
+- **Locución Neuronal:** Microsoft Edge-TTS con sincronización fonética palabra por palabra (`WordBoundary`) sin costes de API.
+- **Motor Visual:** YieldChat Visual Pipeline con planos cinematográficos y canvas de respaldo en alta resolución.
+- **Efectos y Música:** Integración directa con FreeSound (efectos de transición, golpes y sonido ambiental) y Jamendo (composición de cama sonora adaptada al ritmo del montaje con sidechain ducking bajo la locución).
+- **Asistente en Tiempo Real:** Burbuja interactiva conectada a Gemini para resolver dudas sobre el proyecto, estado de los pasos y código.
 
 ```
 ingesta → brief → guion → voz → revision_audio → assets → callouts → render
@@ -17,8 +21,7 @@ el vídeo, con el coste delante en todas.
 **No es un asistente: es un sistema de build.** Cada paso es una función de sus
 entradas, con hash de contenido. Cambiar algo no regenera todo — deja obsoleto
 solo lo que dependía de lo que cambió, con granularidad por unidad (una escena,
-un asset). Sin eso, cada retoque obligaría a rehacer el vídeo entero y esto no
-serviría para nada: **una tanda de imágenes cuesta dinero de verdad**.
+un asset).
 
 **Nada se confirma a mano.** Editar es decidir: lo que se toca se guarda solo al
 dejar de teclear, y el paso siguiente usa la última versión. No hay botones de

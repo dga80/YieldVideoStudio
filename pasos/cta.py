@@ -83,7 +83,8 @@ SITIO = {
 POR_OMISION = {
     "presentacion": ("quien eres y que se va a ver en este video, en una frase "
                      "y sin curriculum"),
-    "cta_medio": "que se suscriba o deje un comentario",
+    "cta_medio": ("pedir un 'Me Gusta' e invitar a los oyentes a comentar desde qué país o ciudad "
+                  "están escuchando el vídeo, o dejar una breve reflexión sobre el dilema planteado"),
     "cta_final": "que se suscriba y vea otro video del canal",
 }
 

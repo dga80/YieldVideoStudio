@@ -1324,6 +1324,13 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_montar=False):
                 lista_eventos, largo, os.path.join(trabajo, "efectos.wav"))
     pista_musica, faltan_temas, cama = None, [], False
     ficha_musica = (p.get("musica") or {}) if p.get("sonido", True) else {}
+    if not ficha_musica and p.get("sonido", True) and sonido.hay_claves()[0] and escenas:
+        try:
+            avisar(0.935, "seleccionando banda sonora con Jamendo")
+            ficha_musica = sonido.montar_banda(escenas, largo, avisar=avisar)
+            p["musica"] = ficha_musica
+        except Exception as fallo:
+            print(f"[render] no se pudo montar banda sonora automática: {fallo}", flush=True)
     if ficha_musica.get("tramos"):
         # LA CAMA: varios temas encadenados, uno por tramo del video. Se
         # construye AQUI, sin salir a la red, desde los ficheros que dejo en el

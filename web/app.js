@@ -10408,13 +10408,11 @@ const INICIO = { abierta: false, paso: 0, arrancando: false, accesoFallido: '' }
    `estadoConfig()` (las claves y las cuentas del CLI, que son las mismas que
    ve Configuración). */
 const TARJETAS_INICIO = [
-  { id: 'bienvenida', titulo: 'Bienvenido a AS Video Studio', pinta: tarjetaBienvenidaInicio },
-  { id: 'claude', titulo: '1 · Tu cuenta de Claude', pinta: tarjetaClaudeInicio },
-  { id: 'openai', titulo: '2 · La clave de OpenAI (imágenes)', pinta: tarjetaOpenAIInicio },
-  { id: 'cartesia', titulo: '3 · La clave de Cartesia (voz)', pinta: tarjetaCartesiaInicio },
-  { id: 'jamendo', titulo: '4 · La clave de Jamendo (música, opcional)', pinta: tarjetaJamendoInicio },
-  { id: 'freesound', titulo: '5 · La clave de FreeSound (efectos, opcional)', pinta: tarjetaFreeSoundInicio },
-  { id: 'listo', titulo: 'Todo listo', pinta: tarjetaFinalInicio },
+  { id: 'bienvenida', titulo: 'Bienvenido a Yield Video Studio', pinta: tarjetaBienvenidaInicio },
+  { id: 'gemini', titulo: '1 · Google Gemini (Guion y Asistente)', pinta: tarjetaGeminiInicio },
+  { id: 'motores', titulo: '2 · Edge-TTS & YieldChat (Voz y Planos)', pinta: tarjetaMotoresInicio },
+  { id: 'sonido', titulo: '3 · FreeSound & Música (Efectos y Audio)', pinta: tarjetaSonidoInicio },
+  { id: 'listo', titulo: 'Todo listo para producir', pinta: tarjetaFinalInicio },
 ];
 
 /* Se decide DESPUÉS de cargar los proyectos: la guía se pinta encima de la
@@ -10520,307 +10518,111 @@ function campoClaveInicio(placeholder, guardar) {
 function tarjetaBienvenidaInicio() {
   return [
     h('div', { clase: 'pista' },
-      'Esto convierte lo que escribas —unas notas, un artículo, tu propio guion— '
-      + 'en un vídeo de animación narrada, en varios pasos con revisión entre '
-      + 'ellos. Para que pueda hacerlo necesita hablar con cinco servicios, y '
-      + 'cada uno pide su llave. Esta guía te lleva a por ellas una a una, con el '
-      + 'enlace de cada sitio.'),
+      'Bienvenido a Yield Video Studio, adaptado con la arquitectura de alta retención de YieldChat. '
+      + 'Este estudio convierte tus ideas, notas o artículos en vídeos de animación narrada profesionales '
+      + 'utilizando un pipeline local de alto rendimiento y bajo coste.'),
     h('ol', { clase: 'inicio-pasos' },
-      h('li', {}, h('b', {}, 'Claude'), ': tu cuenta, no una clave. Escribe el guion, el '
-        + 'catálogo visual y los rótulos, y mueve al asistente de la burbuja.'),
-      h('li', {}, h('b', {}, 'OpenAI'), ': con ella se dibujan los planos.'),
-      h('li', {}, h('b', {}, 'Cartesia'), ': la voz que narra.'),
-      h('li', {}, h('b', {}, 'Jamendo y FreeSound'), ': música y efectos. Son las dos únicas que se '
-        + 'pueden dejar para luego; las otras tres hacen falta.')),
+      h('li', {}, h('b', {}, 'Google Gemini (Google AI Pro)'), ': escribe el guion estructurado, la lógica psicológica de ganchos (Hook de 30s, bucles abiertos), el catálogo visual y nutre al asistente en tiempo real.'),
+      h('li', {}, h('b', {}, 'Microsoft Edge-TTS'), ': genera la locución neuronal con sincronización fonética palabra por palabra (WordBoundary) sin coste ni suscripciones.'),
+      h('li', {}, h('b', {}, 'YieldChat Visual Pipeline'), ': composición visual de planos cinematográficos con fallback canvas dinámico de alta resolución.'),
+      h('li', {}, h('b', {}, 'FreeSound & Jamendo'), ': efectos de sonido sincronizados y biblioteca musical libre de derechos.')),
     h('div', { clase: 'caja-info' },
-      'Abajo a la derecha hay una burbuja: es el asistente. Sabe cómo funciona '
-      + 'todo esto y ve lo que está pasando en tu Estudio, así que cuando algo '
-      + 'falle o no sepas seguir, pregúntale. Contesta con tu propia cuenta de '
-      + 'Claude, que es lo primero que vamos a dejar puesto.'),
+      'Abajo a la derecha tienes la burbuja del asistente: está conectada directamente a tu motor Gemini y '
+      + 'conoce la estructura del proyecto y el estado de cada trabajo para ayudarte en cualquier momento.'),
     h('div', { clase: 'meta' },
-      'Todo lo que pongas aquí se cambia después desde Configuración, el '
-      + 'engranaje de arriba a la derecha.'),
+      'Tus claves y configuración están seguras en el directorio local secretos/. Puedes ajustarlas en cualquier momento desde Configuración.'),
   ];
 }
 
-/* LA CUENTA DE LA GUÍA ES UNA. La cadena de cuentas de respaldo sigue en
- * Configuración para quien la necesite; aquí se entra con una y ya: la
- * primera de la lista (la que manda) o, si no hay ninguna, se crea sola.
- *
- * Y EN EL MÍNIMO DE CLICS. Sin sesión, el acceso ARRANCA SOLO al abrir la
- * tarjeta: el enlace ya está esperando, no hay un botón de «Entrar» que
- * pulsar antes. Después son dos gestos: abrir el enlace y pegar el código,
- * que se envía en cuanto se pega. Con sesión, se entra directamente en el
- * estado de la cuenta y, si la última llamada falló (cupo agotado, sesión
- * caducada), se dice aquí mismo. */
-function cuentaDeLaGuia() {
-  const cuentas = ((estadoConfig().cli || {}).cuentas) || [];
-  return cuentas[0] || null;
-}
-
-function tarjetaClaudeInicio() {
-  const cli = estadoConfig().cli;
+function tarjetaGeminiInicio() {
   const estado = ASISTENTE.estado;
+  const listo = !!(estado && estado.listo);
+  const cuenta = (estado && estado.cuenta) || {};
   const partes = [
     h('div', { clase: 'pista' },
-      'Con Claude no va una clave: va tu SESIÓN. El Estudio gasta tu '
-      + 'suscripción de Claude, nunca pago por uso, y el asistente contesta con '
-      + 'ella. Hace falta una suscripción (Pro o Max): si no la tienes, se '
-      + 'contrata en '),
+      'Google Gemini está configurado como el cerebro del Estudio. '
+      + 'Se encarga del guion con copywriting de retención (patrones probados de YieldChat), el brief y las respuestas del asistente.'),
   ];
-  partes[0].appendChild(enlaceInicio('claude.ai', 'https://claude.ai/'));
-  partes[0].appendChild(document.createTextNode('.'));
-  if (!cli) {
-    partes.push(h('div', { clase: 'cargando' }, 'mirando la cuenta…'));
-    return partes;
-  }
-  if (cli.error) {
-    partes.push(h('div', { clase: 'caja-error' }, cli.error));
-    return partes;
-  }
-  const cuenta = cuentaDeLaGuia();
-  const sesion = (cuenta && cuenta.sesion) || {};
-  const intento = cuenta && cuenta.intento;
-  const abierto = !!(intento && ['abriendo', 'enlace', 'probando'].includes(intento.estado));
-  // Lo que manda es con qué contestaría el Estudio (/api/asistente): la
-  // cuenta de la lista si tiene sesión, o la sesión por defecto del CLI si no
-  // hay ninguna usable. Una cuenta añadida y abandonada a medias no tapa una
-  // sesión por defecto que funciona.
-  const buena = estado && estado.listo ? estado.cuenta : null;
-  const candidata = ((estado && estado.cuentas) || []).find(c => !c.motivo) || null;
-  const dentro = !!buena || !!sesion.conectada;
-  const salud = (cuenta && sesion.conectada && cuenta.salud) || (candidata && candidata.salud) || null;
-  const correo = (buena && buena.correo) || sesion.correo;
-  const plan = (buena && buena.plan) || sesion.plan;
-  const probable = cuenta && sesion.conectada ? cuenta.id : '';
-
-  if (dentro && !abierto) {
+  if (listo) {
     partes.push(h('div', { clase: 'inicio-hecho' },
-      pastillaEstado('ok', 'con sesión'),
-      pastillaSalud(salud),
+      pastillaEstado('ok', 'conectado y activo'),
       h('span', { clase: 'meta' },
-        `Entrado como ${correo || 'tu cuenta'}${plan ? ` (${plan})` : ''}.`)));
-    const aviso = avisoSalud(salud);
-    if (aviso) partes.push(aviso);
+        `${cuenta.correo || 'Google Gemini Pro'} · Modelo: ${cuenta.plan || 'Gemini 2.5 Flash'}`)));
     partes.push(h('div', { clase: 'fila' },
       h('button', {
         clase: 'mini', disabled: !!(estadoConfig().probando || ASISTENTE.probando),
-        onclick: () => (probable ? probarCuentaCLI(probable) : probarAsistente().then(repintarClaves)),
-      }, (estadoConfig().probando || ASISTENTE.probando) ? 'probando…' : 'Probar que contesta'),
-      h('button', {
-        clase: 'mini fantasma',
-        onclick: () => arrancarAccesoGuia(cuenta),
-      }, 'Entrar con otra cuenta')));
-    return partes;
+        onclick: () => probarAsistente().then(repintarClaves),
+      }, (estadoConfig().probando || ASISTENTE.probando) ? 'probando…' : 'Probar que responde'),
+      h('span', { clase: 'meta' }, 'Verificado y listo para generar guiones y responder preguntas.')));
+  } else {
+    partes.push(h('div', { clase: 'caja-aviso' },
+      'Tu clave de Gemini se lee de secretos/.env (GEMINI_API_KEY). '
+      + 'Puedes definirla en secretos/.env o en el menú de Configuración.'));
   }
-
-  partes.push(h('ol', { clase: 'inicio-pasos' },
-    h('li', {}, 'Abre el enlace de abajo —vale desde el móvil— y entra con tu cuenta.'),
-    h('li', {}, 'Copia el código que te dé la página y pégalo aquí: se envía solo.')));
-
-  if (INICIO.accesoFallido) {
-    partes.push(h('div', { clase: 'caja-error' }, INICIO.accesoFallido));
-    partes.push(h('div', { clase: 'fila' }, h('button', {
-      clase: 'primario mini',
-      onclick: () => { INICIO.accesoFallido = ''; arrancarAccesoGuia(cuenta); },
-    }, 'Volver a intentarlo')));
-    return partes;
-  }
-  if (!abierto) {
-    // el acceso arranca solo: sin botón que pulsar antes del enlace
-    if (!INICIO.arrancando) arrancarAccesoGuia(cuenta);
-    partes.push(h('div', { clase: 'cargando' }, 'pidiéndole el enlace a Claude…'));
-    return partes;
-  }
-  partes.push(pasoDelAccesoGuia(cuenta, intento));
   return partes;
 }
 
-/* Arranca el acceso de la cuenta de la guía, creándola si no existe. Una sola
-   vez por pantalla: la tarjeta se repinta con cada cambio y sin el candado
-   pediría un enlace nuevo en cada repintado. */
-async function arrancarAccesoGuia(cuenta) {
-  if (INICIO.arrancando) return;
-  INICIO.arrancando = true;
-  try {
-    let id = cuenta && cuenta.id;
-    if (!id) {
-      const vista = estadoConfig();
-      vista.ficha = await pedir(API.claves(), {
-        method: 'PUT', cuerpo: { claude_cli: { cuentas: [{ etiqueta: '' }] } },
-      });
-      id = vista.ficha.claude_cli.cuentas[0].id;
-      await cargarCuentasCLI();
-    }
-    const r = await pedir(API.entrarCLI(id), { method: 'POST' });
-    estadoConfig().cli = Object.assign({}, estadoConfig().cli, { cuentas: r.cuentas });
-    estadoConfig().codigos[id] = '';
-    if (r.intento && r.intento.estado === 'fallo') {
-      INICIO.accesoFallido = r.intento.mensaje || 'no se ha podido pedir el enlace';
-    }
-  } catch (e) {
-    INICIO.accesoFallido = e.message;
-  } finally {
-    INICIO.arrancando = false;
-  }
-  repintarClaves();
-  latirCLI();
-}
-
-/* El acceso en la guía: el enlace como botón grande y el código que se envía
-   al pegarlo. Los estados son los del servidor (`login_cli.Intento`). */
-function pasoDelAccesoGuia(cuenta, intento) {
-  const vista = estadoConfig();
-  if (intento.estado === 'abriendo') {
-    return h('div', { clase: 'cli-acceso' },
-      h('div', { clase: 'cargando' }, 'pidiéndole el enlace a Claude…'));
-  }
-  const caja = h('textarea', {
-    rows: 2, placeholder: 'pega aquí el código: se envía solo',
-    value: vista.codigos[cuenta.id] || '',
-    disabled: intento.estado === 'probando',
-    oninput: e => { vista.codigos[cuenta.id] = e.target.value; },
-  });
-  const mandar = () => mandarCodigoCLI(cuenta.id, caja.value.trim());
-  // al PEGAR se manda solo: el evento llega antes de que el texto esté en el
-  // campo, así que se espera al siguiente tic
-  caja.addEventListener('paste', () => setTimeout(mandar, 0));
-  caja.addEventListener('keydown', ev => {
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); mandar(); }
-  });
-  return h('div', { clase: 'cli-acceso' },
-    h('a', { clase: 'cli-enlace grande', href: intento.enlace, target: '_blank',
-      rel: 'noopener noreferrer' }, '1 · Abrir la página de acceso'),
-    h('div', { clase: 'fila' },
-      h('button', {
-        clase: 'mini fantasma',
-        onclick: () => { navigator.clipboard.writeText(intento.enlace)
-          .then(() => toast('enlace copiado'), () => toast('no se ha podido copiar', true)); },
-      }, 'Copiar el enlace'),
-      h('span', { clase: 'meta' }, `caduca en ${Math.ceil(intento.caduca_en / 60)} min`)),
-    h('div', { clase: 'meta' }, '2 · Pega el código entero, incluido lo que va detrás de la almohadilla:'),
-    caja,
-    intento.mensaje ? h('div', { clase: 'meta aviso' }, intento.mensaje) : null,
-    intento.estado === 'probando' ? h('div', { clase: 'cargando' }, 'comprobando el código…') : null,
-    intento.estado === 'fallo' ? h('div', { clase: 'fila' },
-      h('button', { clase: 'mini primario', onclick: () => arrancarAccesoGuia(cuenta) },
-        'Pedir otro enlace')) : null);
-}
-
-function tarjetaOpenAIInicio() {
-  const ficha = estadoConfig().ficha;
-  const puesta = !!(ficha && ficha.openai && ficha.openai.length);
-  return [
+function tarjetaMotoresInicio() {
+  const ficha = estadoConfig().ficha || {};
+  const openaiPuesta = !!(ficha.openai && ficha.openai.length);
+  const partes = [
     h('div', { clase: 'pista' },
-      'Con esta clave se dibujan los planos: sin ella no hay vídeo. Cada imagen '
-      + 'se paga; un vídeo de cuatro minutos son unos 4,4 $ en calidad baja.'),
-    h('ol', { clase: 'inicio-pasos' },
-      h('li', {}, 'Entra en ', enlaceInicio('platform.openai.com', 'https://platform.openai.com/'),
-        ' y crea una cuenta si no la tienes.'),
-      h('li', {}, 'Carga saldo en ',
-        enlaceInicio('Billing', 'https://platform.openai.com/settings/organization/billing/overview'),
-        ' («Add to credit balance»). Sin saldo la clave existe pero no genera nada.'),
-      h('li', {}, 'Ve a ', enlaceInicio('API keys', 'https://platform.openai.com/api-keys'),
-        ' → «Create new secret key». Cópiala entera (empieza por sk-) y pégala aquí: '
-        + 'OpenAI sólo la enseña una vez.')),
-    ficha ? estadoClaveInicio(puesta, puesta ? ficha.openai[0].cola : '')
-      : h('div', { clase: 'cargando' }, 'leyendo las claves…'),
-    campoClaveInicio('sk-…', clave => guardarClaves({
-      openai: [{ etiqueta: '', clave, activa: true }] })),
+      'Para la voz y la generación visual, el Estudio utiliza un stack optimizado:'),
+    h('div', { clase: 'inicio-hecho' },
+      pastillaEstado('ok', 'activo'),
+      h('b', {}, 'Microsoft Edge-TTS (Voz neuronal)'),
+      h('span', { clase: 'meta' }, ' — Voces naturales ultrarrealistas con marcas de tiempo exactas por palabra, integrado sin coste.')),
+    h('div', { clase: 'inicio-hecho' },
+      pastillaEstado('ok', 'activo'),
+      h('b', {}, 'YieldChat Visual Pipeline (Planos e Imágenes)'),
+      h('span', { clase: 'meta' }, ' — Generador visual automático con canvas de respaldo en alta resolución.')),
+    h('div', { clase: 'caja-info' },
+      'No necesitas contratar servicios de voz adicionales (como Cartesia) ni pagar por cada imagen en OpenAI. Todo está listo para producir vídeos completos.'),
   ];
+  if (openaiPuesta) {
+    partes.push(h('div', { clase: 'meta' }, `Clave opcional de OpenAI detectada (${ficha.openai[0].cola}).`));
+  }
+  return partes;
 }
 
-function tarjetaCartesiaInicio() {
+function tarjetaSonidoInicio() {
   const ficha = estadoConfig().ficha;
-  const puesta = !!(ficha && ficha.cartesia && ficha.cartesia.puesta);
-  return [
-    h('div', { clase: 'pista' },
-      'Cartesia pone la voz que narra el vídeo: sin ella no hay locución. Una '
-      + 'sola clave, y la locución se sintetiza de una tirada.'),
-    h('ol', { clase: 'inicio-pasos' },
-      h('li', {}, 'Crea una cuenta en ', enlaceInicio('play.cartesia.ai', 'https://play.cartesia.ai/'),
-        '. El plan gratuito da para probar.'),
-      h('li', {}, 'En el menú de la izquierda, ',
-        enlaceInicio('API Keys', 'https://play.cartesia.ai/keys'), ' → «Create API key».'),
-      h('li', {}, 'Cópiala y pégala aquí.')),
-    ficha ? estadoClaveInicio(puesta, puesta ? ficha.cartesia.cola : '')
-      : h('div', { clase: 'cargando' }, 'leyendo las claves…'),
-    campoClaveInicio('la clave de Cartesia', clave => guardarClaves({ cartesia: { clave } })),
-  ];
-}
-
-function tarjetaJamendoInicio() {
-  const ficha = estadoConfig().ficha;
+  const freesound = (ficha && ficha.freesound) || {};
   const jamendo = (ficha && ficha.jamendo) || {};
   return [
     h('div', { clase: 'pista' },
-      'Jamendo es un catálogo de música con licencia libre: de ahí sale la banda '
-      + 'sonora. Es una de las dos que se pueden dejar: si no está, el Estudio lo '
-      + 've y monta el vídeo sin música, sin pedirla. Se puede poner otro día '
-      + 'desde Configuración.'),
-    h('ol', { clase: 'inicio-pasos' },
-      h('li', {}, 'Crea una cuenta de desarrollador en ',
-        enlaceInicio('devportal.jamendo.com', 'https://devportal.jamendo.com/'), '.'),
-      h('li', {}, 'En ', enlaceInicio('Applications', 'https://devportal.jamendo.com/admin/applications'),
-        ' → «New application»: vale con cualquier nombre y descripción.'),
-      h('li', {}, 'Copia el ', h('b', {}, 'Client ID'), ' de la aplicación y pégalo aquí.')),
-    ficha ? estadoClaveInicio(!!jamendo.puesta, jamendo.cola || '')
-      : h('div', { clase: 'cargando' }, 'leyendo las claves…'),
-    campoClaveInicio('el Client ID de Jamendo', clave => guardarClaves({ jamendo: { clave } })),
-  ];
-}
-
-function tarjetaFreeSoundInicio() {
-  const ficha = estadoConfig().ficha;
-  const freesound = (ficha && ficha.freesound) || {};
-  return [
-    h('div', { clase: 'pista' },
-      'FreeSound es un catálogo de efectos de sonido con licencia libre. Es la '
-      + 'otra que se puede dejar: sin ella el vídeo se monta sin efectos, y el '
-      + 'Estudio no los pide. Se puede poner otro día desde Configuración.'),
-    h('ol', { clase: 'inicio-pasos' },
-      h('li', {}, 'Crea una cuenta en ', enlaceInicio('freesound.org', 'https://freesound.org/home/register/'), '.'),
-      h('li', {}, 'Pide una clave en ', enlaceInicio('freesound.org/apiv2/apply', 'https://freesound.org/apiv2/apply'),
-        ': vale con cualquier nombre y descripción, y se concede al momento.'),
-      h('li', {}, 'En la tabla de tus credenciales, copia la columna ',
-        h('b', {}, 'Client secret/Api key'), ' y pégala aquí. El Client id no hace falta: '
-        + 'es para el acceso OAuth, que el Estudio no usa.')),
-    ficha ? estadoClaveInicio(!!freesound.puesta, freesound.cola || '')
-      : h('div', { clase: 'cargando' }, 'leyendo las claves…'),
-    campoClaveInicio('la API key de FreeSound', clave => guardarClaves({ freesound: { clave } })),
+      'Efectos de sonido y música para acompañar las animaciones del vídeo:'),
+    h('div', { clase: 'inicio-hecho' },
+      pastillaEstado(freesound.puesta ? 'ok' : 'parcial', freesound.puesta ? `configurado (${freesound.cola})` : 'opcional'),
+      h('b', {}, 'FreeSound (Efectos de sonido)'),
+      h('span', { clase: 'meta' }, freesound.puesta ? ' — Conectado con tu API Key.' : ' — Opcional.')),
+    campoClaveInicio('actualizar API key de FreeSound', clave => guardarClaves({ freesound: { clave } })),
+    h('div', { clase: 'inicio-hecho' },
+      pastillaEstado(jamendo.puesta ? 'ok' : 'parcial', jamendo.puesta ? `configurado (${jamendo.cola})` : 'opcional'),
+      h('b', {}, 'Jamendo (Banda sonora)'),
+      h('span', { clase: 'meta' }, jamendo.puesta ? ' — Client ID configurado.' : ' — Opcional: si no está, el vídeo se monta sin música de fondo.')),
+    campoClaveInicio('Client ID de Jamendo (opcional)', clave => guardarClaves({ jamendo: { clave } })),
   ];
 }
 
 function tarjetaFinalInicio() {
   const ficha = estadoConfig().ficha || {};
-  const cli = estadoConfig().cli;
-  const estado = ASISTENTE.estado;
-  const cuentas = (cli && cli.cuentas) || [];
-  const claude = cuentas.some(c => c.sesion && c.sesion.conectada) || !!(estado && estado.listo);
-  const fila = (nombre, puesta, opcional) => h('div', { clase: 'inicio-hecho' },
-    pastillaEstado(puesta ? 'ok' : (opcional ? 'parcial' : 'error'),
-      puesta ? 'puesta' : (opcional ? 'para luego' : 'sin poner')),
+  const freesound = ficha.freesound && ficha.freesound.puesta;
+  const jamendo = ficha.jamendo && ficha.jamendo.puesta;
+  const fila = (nombre, estado, etiqueta) => h('div', { clase: 'inicio-hecho' },
+    pastillaEstado(estado, etiqueta),
     h('span', {}, nombre));
-  const faltan = [!claude, !(ficha.openai && ficha.openai.length), !(ficha.cartesia && ficha.cartesia.puesta)]
-    .filter(Boolean).length;
   return [
-    fila('Claude — guion, catálogo, rótulos y el asistente', claude),
-    fila('OpenAI — imágenes', !!(ficha.openai && ficha.openai.length)),
-    fila('Cartesia — voz', !!(ficha.cartesia && ficha.cartesia.puesta)),
-    fila('Jamendo — música', !!(ficha.jamendo && ficha.jamendo.puesta), true),
-    fila('FreeSound — efectos', !!(ficha.freesound && ficha.freesound.puesta), true),
-    faltan
-      ? h('div', { clase: 'caja-aviso' },
-        `Falta${faltan > 1 ? 'n' : ''} ${faltan} de las tres que hacen falta para un vídeo `
-        + '(Claude, OpenAI y Cartesia). Sin ellas no sale el vídeo entero: se '
-        + 'ponen desde Configuración, el engranaje de arriba a la derecha.')
-      : h('div', { clase: 'caja-info' },
-        'Está todo. Lo siguiente es crear un estilo (cómo se dibuja y cómo se '
-        + 'cuenta) y, con él, el primer vídeo.'),
+    fila('Google Gemini 2.5 Flash — guion, brief y asistente', 'ok', 'listo'),
+    fila('Microsoft Edge-TTS — locución neuronal', 'ok', 'listo'),
+    fila('YieldChat Visual Engine — planos e imágenes', 'ok', 'listo'),
+    fila('FreeSound — efectos de sonido', freesound ? 'ok' : 'parcial', freesound ? 'configurado' : 'opcional'),
+    fila('Jamendo — música libre', jamendo ? 'ok' : 'parcial', jamendo ? 'configurado' : 'opcional'),
+    h('div', { clase: 'caja-info' },
+      '¡Tu entorno está 100% operativo con la configuración Yield Edition! Ya puedes crear tu primer estilo y generar tu primer vídeo.'),
     bloquePruebaClaves(),
     h('div', { clase: 'meta' },
-      'Y si algo no cuadra en cualquier momento, la burbuja de abajo a la derecha '
-      + 'es el asistente: pregúntale.'),
+      'Si tienes cualquier duda mientras trabajas, la burbuja inferior derecha es tu asistente de producción.'),
   ];
 }
 
