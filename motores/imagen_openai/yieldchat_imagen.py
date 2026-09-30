@@ -95,13 +95,21 @@ def enriquecer_prompt(raw_prompt, tamano="apaisado"):
     limpio = limpiar_y_condensar_prompt(raw_prompt)
     partes = [limpio]
 
+    # Detectar si el estilo pide monigotes / stick-figures
+    es_stick = bool(re.search(
+        r"\b(stick[- ]figure|stickfigure|monigote|stick\s*man)\b",
+        raw_prompt, re.I
+    ))
+
     # Detectar si el estilo pide 2D / animación / ilustración plana
     es_2d = bool(re.search(
         r"\b(2d|flat|vector|minimalist|cartoon|anime|line\s*art|drawing|illustration|sketch|stick\s*figure|whiteboard|comic|dibujo)\b",
         raw_prompt, re.I
     ))
 
-    if es_2d:
+    if es_stick:
+        partes.append("minimalist 2D stick figure cartoon, clean black pen line art on pure white paper, simple stick figures with circular heads, 2D vector style")
+    elif es_2d:
         partes.append("clean line art, 2D vector animation style, high quality illustration")
     else:
         if tamano in ("apaisado", "16:9"):
@@ -224,7 +232,18 @@ def _obtener_clave_banana():
     clave = os.environ.get("POLLINATIONS_API_KEY") or os.environ.get("BANANA_API_KEY")
     if clave:
         return clave.strip()
-    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "secretos", "claves.json")
+    raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env_file = os.path.join(raiz, "secretos", ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    m = re.match(r"^(?:POLLINATIONS_API_KEY|BANANA_API_KEY)=(.*)$", line.strip())
+                    if m and m.group(1).strip():
+                        return m.group(1).strip()
+        except Exception:
+            pass
+    ruta = os.path.join(raiz, "secretos", "claves.json")
     if os.path.exists(ruta):
         try:
             with open(ruta, "r", encoding="utf-8") as fh:
@@ -306,20 +325,23 @@ def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=N
     t0 = time.time()
     width, height = RATIO_MAP.get(tamano, (1280, 720))
 
-    # 1. Intentar primero con Google Gemini
-    gemini_bytes, gemini_modelo = _intentar_generar_gemini(prompt, width, height, tamano)
-    if gemini_bytes:
-        segundos = time.time() - t0
-        meta = {
-            "segundos": round(segundos, 1),
-            "quality": "high",
-            "refs": len(referencias or []),
-            "coste": 0.0,
-            "modelo": gemini_modelo,
-            "tamano": f"{width}x{height}",
-            "usage": {}
-        }
-        return gemini_bytes, meta
+    api_key = _obtener_clave_banana()
+
+    # 1. Si no hay clave de Pollinations, intentar con Google Gemini
+    if not api_key:
+        gemini_bytes, gemini_modelo = _intentar_generar_gemini(prompt, width, height, tamano)
+        if gemini_bytes:
+            segundos = time.time() - t0
+            meta = {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": gemini_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
+            return gemini_bytes, meta
 
     prompt_completo = enriquecer_prompt(prompt, tamano)
 
