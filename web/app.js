@@ -1313,7 +1313,9 @@ async function abrirProyecto(pid) {
   APP.pid = pid;
   localStorage.setItem('estudio.pid', pid);
   pintarBotonProyecto();
+  const configGuardada = APP.vista ? APP.vista.config : null;
   APP.fichas = {}; APP.borrador = {}; APP.sucio = {}; APP.vista = {};
+  if (configGuardada) APP.vista.config = configGuardada;
   // la ranura elegida es de ESTE panel: en otro proyecto no significa nada
   Object.keys(RANURAS).forEach(paso => delete RANURAS[paso]);
   CACHE_ARCHIVOS.clear();
@@ -2275,6 +2277,9 @@ function pintarConfig() {
   const ficha = vista.ficha;
   if (!ficha) {
     caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo las claves…'));
+    if (!vista.cargando) {
+      cargarClaves().then(repintarClaves);
+    }
     return;
   }
   caja.appendChild(seccionMotoresActivos());
@@ -2539,8 +2544,8 @@ async function cambiarCarpetaAlmacenamiento(nuevaRuta, moverExistentes) {
     });
     vista.almacenamiento = res;
     toast(res.mensaje || 'Ubicación de almacenamiento actualizada');
-    repintarClaves();
     await cargarProyectos();
+    repintarClaves();
   } catch (e) {
     toast(`Error al cambiar almacenamiento: ${e.message}`, true);
   }
