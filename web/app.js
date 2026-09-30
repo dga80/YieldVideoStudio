@@ -6691,13 +6691,21 @@ function barraTandaLightAhora(tanda) {
     return null;
   }
   const avance = Math.max(0, Math.min(1, Number(trabajo.progreso) || 0));
+  const pct = Math.round(avance * 100);
   const relleno = h('div', { clase: 'relleno' });
   relleno.style.width = `${(avance * 100).toFixed(1)}%`;
-  return h('div', { clase: 'barra-light' },
+
+  const badge = h('span', { clase: 'porcentaje-badge' }, `${pct}%`);
+  const textoAvance = h('span', { clase: 'texto-avance' }, avancePublico(trabajo) || 'Generando…');
+  const tiempo = restanteTandaLight(trabajo, avance);
+  const tiempoSpan = tiempo ? h('span', { clase: 'tiempo-restante' }, `~${tiempo}`) : null;
+
+  return h('div', { clase: 'barra-light activa' },
     h('div', { clase: 'carril' }, relleno),
     h('div', { clase: 'meta' },
-      [`${Math.round(avance * 100)} %`, avancePublico(trabajo),
-       restanteTandaLight(trabajo, avance)].filter(Boolean).join(' · ')));
+      h('div', { clase: 'fila-meta-izq' }, badge, textoAvance),
+      tiempoSpan
+    ));
 }
 
 /* Lo que falta, con los tiempos MEDIDOS de esta máquina.

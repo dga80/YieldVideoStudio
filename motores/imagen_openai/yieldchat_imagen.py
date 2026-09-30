@@ -259,6 +259,87 @@ def _obtener_clave_banana():
     return ""
 
 
+def _obtener_clave_siliconflow():
+    clave = os.environ.get("SILICONFLOW_API_KEY")
+    if clave:
+        return clave.strip()
+    raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env_file = os.path.join(raiz, "secretos", ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    m = re.match(r"^SILICONFLOW_API_KEY=(.*)$", line.strip())
+                    if m and m.group(1).strip():
+                        return m.group(1).strip()
+        except Exception:
+            pass
+    ruta = os.path.join(raiz, "secretos", "claves.json")
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, "r", encoding="utf-8") as fh:
+                d = json.load(fh)
+            c = d.get("siliconflow")
+            if isinstance(c, dict) and c.get("clave"):
+                return str(c["clave"]).strip()
+            elif isinstance(c, str) and c.strip():
+                return c.strip()
+        except Exception:
+            pass
+    return ""
+
+
+def _intentar_generar_siliconflow(prompt, width, height, tamano="apaisado"):
+    """Genera la imagen con SiliconFlow usando Tongyi-MAI/Z-Image-Turbo o FLUX."""
+    api_key = _obtener_clave_siliconflow()
+    if not api_key:
+        return None, None
+
+    import requests
+    url = "https://api.siliconflow.com/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    img_size = "1024x576" if tamano in ("apaisado", "16:9") else "1024x1024"
+    prompt_completo = enriquecer_prompt(prompt, tamano)
+
+    modelos = [
+        "Tongyi-MAI/Z-Image-Turbo",
+        "black-forest-labs/FLUX.1-schnell"
+    ]
+
+    for mod in modelos:
+        try:
+            payload = {
+                "model": mod,
+                "prompt": prompt_completo,
+                "image_size": img_size
+            }
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                img_url = (data.get("images") or [{}])[0].get("url") or (data.get("data") or [{}])[0].get("url")
+                if img_url:
+                    img_resp = requests.get(img_url, timeout=20)
+                    if img_resp.status_code == 200:
+                        im = Image.open(io.BytesIO(img_resp.content))
+                        if im.size != (width, height):
+                            im = im.resize((width, height), Image.Resampling.LANCZOS)
+                        if im.mode != "RGBA":
+                            im = im.convert("RGBA")
+                        out = io.BytesIO()
+                        im.save(out, format="PNG")
+                        return out.getvalue(), f"{mod} (SiliconFlow)"
+            elif resp.status_code in (401, 402):
+                # Saldo insuficiente o clave invalida en SiliconFlow
+                break
+        except Exception:
+            continue
+    return None, None
+
+
 def _intentar_generar_gemini(prompt, width, height, tamano="apaisado"):
     """Intenta generar la imagen usando los modelos de imagen oficiales de Google Gemini."""
     try:
@@ -325,9 +406,23 @@ def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=N
     t0 = time.time()
     width, height = RATIO_MAP.get(tamano, (1280, 720))
 
+    # 1. Intentar SiliconFlow primero si hay clave
+    sf_bytes, sf_modelo = _intentar_generar_siliconflow(prompt, width, height, tamano)
+    if sf_bytes:
+        segundos = time.time() - t0
+        return sf_bytes, {
+            "segundos": round(segundos, 1),
+            "quality": "high",
+            "refs": len(referencias or []),
+            "coste": 0.0,
+            "modelo": sf_modelo,
+            "tamano": f"{width}x{height}",
+            "usage": {}
+        }
+
     api_key = _obtener_clave_banana()
 
-    # 1. Si no hay clave de Pollinations, intentar con Google Gemini
+    # 2. Si no hay clave de Pollinations, intentar con Google Gemini
     if not api_key:
         gemini_bytes, gemini_modelo = _intentar_generar_gemini(prompt, width, height, tamano)
         if gemini_bytes:
