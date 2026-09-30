@@ -926,14 +926,23 @@ def escribiendo(instruccion, modelo=MODELO_POR_DEFECTO,
             extra += ["--add-dir", os.path.abspath(ruta)]
     carpeta = tempfile.mkdtemp(prefix="cli_salida_")
     try:
-        ejecutar(instruccion + CIERRE.format(fichero=FICHERO_SALIDA),
-                 modelo=modelo, esfuerzo=esfuerzo, cwd=carpeta,
-                 tiempo_max_s=tiempo_max_s, base_tiempo_s=base_tiempo_s,
-                 herramientas_vetadas=vetadas, permisos="acceptEdits",
-                 extra=extra, avance=avance, para=para,
-                 herramientas_permitidas=herramientas_permitidas)
+        texto, sobre = ejecutar(instruccion + CIERRE.format(fichero=FICHERO_SALIDA),
+                                modelo=modelo, esfuerzo=esfuerzo, cwd=carpeta,
+                                tiempo_max_s=tiempo_max_s, base_tiempo_s=base_tiempo_s,
+                                herramientas_vetadas=vetadas, permisos="acceptEdits",
+                                extra=extra, avance=avance, para=para,
+                                herramientas_permitidas=herramientas_permitidas)
         ruta = os.path.join(carpeta, FICHERO_SALIDA)
         if not os.path.exists(ruta):
+            if texto and texto.strip():
+                try:
+                    from . import comun                                # noqa: PLC0415
+                except ImportError:                          # pasos/ suelto en sys.path
+                    import comun                                       # noqa: PLC0415
+                try:
+                    return comun.extraer_json(texto, que)
+                except Exception:
+                    pass
             hay = sorted(os.listdir(carpeta))[:8]
             raise RuntimeError(
                 f"el agente de {para} no ha escrito {FICHERO_SALIDA}"

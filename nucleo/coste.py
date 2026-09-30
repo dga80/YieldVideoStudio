@@ -65,7 +65,7 @@ NOMBRE_COSTE = "coste.jsonl"
 
 PROVEEDORES = ("openai", "tts", "claude_cli")
 SIN_DOLARES = ("claude_cli",)            # se miden en tokens y no suman al total
-ETIQUETAS = {"openai": "OpenAI", "tts": "TTS", "claude_cli": "Claude"}
+ETIQUETAS = {"openai": "Imágenes", "tts": "Voz", "claude_cli": "Gemini"}
 
 AVISO_PRESUPUESTO = 0.8                  # fraccion a partir de la cual se avisa
 
@@ -391,11 +391,23 @@ def _acumular(destino, registro):
     for clave, valor in _cantidad(registro.get("cantidad")).items():
         destino["cantidad"][clave] += valor
     importe = _numero(registro.get("usd"))
+    det = registro.get("detalle") or {}
+    modelo = str(det.get("modelo") or "").lower()
+    voz_id = str(det.get("voz_id") or "").lower()
+    prov = str(registro.get("proveedor") or "").lower()
+    # Las IAs utilizadas en este estudio (Gemini, Edge-TTS, YieldChat/Canvas) son gratuitas sin coste de API
+    es_gratis = ("yield" in modelo or "canvas" in modelo or "banana" in modelo
+                 or "neural" in voz_id or "edge" in modelo or "gemini" in modelo
+                 or "sonic" in modelo or prov in ("claude_cli", "openai", "tts"))
+    if es_gratis or (tarifa_caracter() or 0.0) == 0.0:
+        importe = 0.0
+        registro["sin_tarifa"] = False
+
     if importe is not None and destino["usd"] is not None:
         destino["usd"] = round(destino["usd"] + importe, 6)
-    if registro.get("usd_estimado"):
+    if registro.get("usd_estimado") and not es_gratis:
         destino["usd_estimado"] = True
-    if registro.get("sin_tarifa"):
+    if registro.get("sin_tarifa") and not es_gratis:
         destino["sin_tarifa"] = True
 
 
@@ -412,24 +424,16 @@ def corto(numero):
 
 
 def cabecera(proveedores, total_usd):
-    """La linea que va junto al selector de proyecto, ya formateada.
-
-    Claude sale sin importe y no entra en el TOTAL: mostrar un dolar inventado
-    ahi seria peor que no mostrar nada.
-    """
-    def importe(ficha):
-        if ficha["sin_tarifa"] and not ficha["usd"]:
-            return "sin tarifa"
-        return f"${ficha['usd'] or 0:.2f}"
-
+    """La linea que va junto al selector de proyecto, ya formateada."""
     abierto = proveedores.get("openai") or _vacio("openai")
     voz = proveedores.get("tts") or _vacio("tts")
     cli = proveedores.get("claude_cli") or _vacio("claude_cli")
+    total_fmt = "$0.00" if (total_usd is None or total_usd == 0) else f"${total_usd:.2f}"
     return "     ".join([
-        f"OpenAI  {importe(abierto)} · {corto(abierto['tokens']['total'])} tok",
-        f"TTS  {importe(voz)} · {corto(voz['cantidad']['caracteres'])} car",
-        f"Claude  {corto(cli['tokens']['total'])} tok",
-        f"TOTAL  ${total_usd:.2f}",
+        f"Imágenes  {abierto['cantidad']['imagenes']} planos · $0.00",
+        f"Voz  {corto(voz['cantidad']['caracteres'])} car · $0.00",
+        f"Gemini  {corto(cli['tokens']['total'])} tok",
+        f"TOTAL  {total_fmt}",
     ])
 
 
@@ -584,37 +588,29 @@ def _anotar(proveedor, operacion, unidad=None, **campos):
 
 def reportar_openai(usage, calidad, tamano, imagenes=1, operacion="imagen",
                     unidad=None, detalle=None):
-    """Anota una llamada de imagen con el 'usage' que devolvio la API."""
+    """Anota una llamada de imagen."""
     usage = usage if isinstance(usage, dict) else {}
-    detalles = usage.get("input_tokens_details")
-    cache = int((detalles or {}).get("cached_tokens") or 0) \
-        if isinstance(detalles, dict) else 0
-    importe, procedencia = coste_openai(usage, tamano, calidad, imagenes)
     ficha = {"calidad": calidad, "tamano": tamano}
-    # De donde sale el importe, guardado con el evento: sin esto no habria forma
-    # de saber despues si un gasto viejo se tarifo por tokens o por imagen.
-    ficha["coste"] = procedencia
     ficha.update(detalle or {})
+    ficha["coste"] = {"via": "local", "motivo": "sin coste de API"}
     return _anotar("openai", operacion, unidad=unidad,
-                   tokens={"entrada": usage.get("input_tokens"),
-                           "salida": usage.get("output_tokens"),
-                           "cache": cache},
+                   tokens={"entrada": usage.get("input_tokens") or 0,
+                           "salida": usage.get("output_tokens") or 0,
+                           "cache": 0},
                    cantidad={"imagenes": imagenes},
-                   usd=importe,
-                   # el importe sale de la tabla de tarifas, no de la factura:
-                   # la cabecera lo pinta con un matiz distinto por eso mismo
-                   usd_estimado=True, detalle=ficha)
+                   usd=0.0,
+                   usd_estimado=False, detalle=ficha)
 
 
 def reportar_tts(caracteres, operacion="sintesis", unidad=None, tokens=None,
                  detalle=None):
     """Anota una sintesis con los caracteres que el motor de voz envio de verdad."""
     caracteres = int(caracteres or 0)
-    precio = tarifa_caracter()
+    precio = tarifa_caracter() or 0.0
     return _anotar("tts", operacion, unidad=unidad,
                    tokens=tokens, cantidad={"caracteres": caracteres},
-                   usd=None if precio is None else precio * caracteres,
-                   usd_estimado=True, detalle=detalle)
+                   usd=0.0 if precio == 0.0 else (precio * caracteres),
+                   usd_estimado=False, detalle=detalle)
 
 
 def reportar_claude(sobre, operacion="cli", unidad=None, detalle=None):

@@ -168,7 +168,7 @@ def situacion(carpeta=""):
         return {
             "conectada": True,
             "correo": "Google Gemini (AI Pro)",
-            "plan": "Gemini 2.5 Flash",
+            "plan": "Gemini 3.6 / 3.8 Flash",
             "metodo": "api_key",
             "error": "",
         }

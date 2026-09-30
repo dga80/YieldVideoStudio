@@ -121,7 +121,19 @@ TIPOS = {
     ".srt": "text/plain; charset=utf-8",
 }
 
-_ESTADO_SERVICIO = {"raiz": os.environ.get("ESTUDIO_PROYECTOS") or RAIZ_POR_DEFECTO}
+def _raiz_inicial():
+    env = os.environ.get("ESTUDIO_PROYECTOS")
+    if env and env.strip():
+        return os.path.abspath(env.strip())
+    guardada = AJUSTES.carpeta_proyectos()
+    if guardada:
+        guardada_abs = os.path.abspath(os.path.expanduser(guardada.strip()))
+        if os.path.isdir(guardada_abs):
+            return guardada_abs
+    return RAIZ_POR_DEFECTO
+
+
+_ESTADO_SERVICIO = {"raiz": _raiz_inicial()}
 _CONTEXTOS = {}
 _INDICE_TRABAJOS = {}
 _LOCK = threading.RLock()
@@ -159,6 +171,17 @@ def fijar_raiz_proyectos(ruta):
         _ESTADO_SERVICIO["raiz"] = os.path.abspath(ruta)
         _CONTEXTOS.clear()
         os.makedirs(_ESTADO_SERVICIO["raiz"], exist_ok=True)
+        if PASOS_MODULOS is not None and hasattr(PASOS_MODULOS, "medios"):
+            if not os.environ.get("ESTUDIO_BANCO"):
+                try:
+                    if os.path.abspath(_ESTADO_SERVICIO["raiz"]) != os.path.abspath(RAIZ_POR_DEFECTO):
+                        banco_nuevo = os.path.join(os.path.dirname(_ESTADO_SERVICIO["raiz"]), "banco")
+                        PASOS_MODULOS.medios.BANCO = banco_nuevo
+                        os.makedirs(banco_nuevo, exist_ok=True)
+                    else:
+                        PASOS_MODULOS.medios.BANCO = os.path.join(RAIZ_ESTUDIO, "banco")
+                except Exception:
+                    pass
     return _ESTADO_SERVICIO["raiz"]
 
 
@@ -1773,6 +1796,55 @@ def catalogo_voces_global(idioma: str = Query(default=None),
         raise ErrorApi(502, f"no se ha podido leer el catalogo de voces: {fallo}")
     return {"voces": voces, "total": len(voces), "idioma": idioma,
             "solo_nativas": bool(nativas or solo_nativas)}
+
+
+_FRASES_MUESTRA = {
+    "es": "Hola, esta es una pequeña muestra de cómo suena esta voz para tus vídeos.",
+    "en": "Hello, this is a short preview of how this voice sounds for your videos.",
+    "fr": "Bonjour, voici un court aperçu de cette voix pour vos vidéos.",
+    "de": "Hallo, dies ist eine kurze Hörprobe dieser Stimme für deine Videos.",
+    "it": "Ciao, questo è un breve esempio di come suona questa voce per i tuoi video.",
+    "pt": "Olá, esta é uma breve demonstração de como esta voz soa nos seus vídeos.",
+}
+
+
+@app.get("/api/voces/muestra")
+def muestra_de_voz(voz_id: str = Query(default=""),
+                   velocidad: str = Query(default="normal"),
+                   idioma: str = Query(default="es")):
+    """Genera y sirve una muestra corta de audio para audicionar la voz al instante."""
+    idioma = str(idioma or "es").strip().lower()
+    texto = _FRASES_MUESTRA.get(idioma, _FRASES_MUESTRA["es"])
+    velocidad = str(velocidad or "normal").strip().lower()
+    voz_id = str(voz_id or "").strip()
+
+    if not voz_id:
+        voces = PASOS_MODULOS.p4_voz.listar_voces(idioma)
+        voz_id = voces[0]["id"] if voces else "es-ES-AlvaroNeural"
+
+    firma = hashlib.sha256(f"{voz_id}_{velocidad}_{idioma}".encode("utf-8")).hexdigest()[:14]
+    carpeta = os.path.join(RAIZ_ESTUDIO, "cache", "muestras_voces")
+    os.makedirs(carpeta, exist_ok=True)
+    ruta_cache = os.path.join(carpeta, f"muestra_{firma}.wav")
+
+    if os.path.exists(ruta_cache) and os.path.getsize(ruta_cache) > 1000:
+        return FileResponse(ruta_cache, media_type="audio/wav")
+
+    cfg = {"voz_id": voz_id, "velocidad": velocidad, "idioma": idioma}
+    try:
+        motor_voz = PASOS_MODULOS.comun.cargar_motor("voz_cartesia", "voz.py")
+        api_key = motor_voz.cargar_api_key()
+        if not api_key or api_key == "edge-tts" or "Neural" in str(voz_id):
+            from motores.voz_cartesia import edge_tts_motor
+            wav, _, _ = edge_tts_motor.sintetizar_edge(texto, cfg)
+        else:
+            wav, _, _ = PASOS_MODULOS.p4_voz.sintetizar_toma(texto, cfg)
+    except Exception as exc:
+        raise ErrorApi(502, f"no se ha podido sintetizar la muestra: {exc}")
+
+    with open(ruta_cache, "wb") as fh:
+        fh.write(wav)
+    return FileResponse(ruta_cache, media_type="audio/wav")
 
 
 # ------------------------------------------------------------ voz descrita
@@ -5374,12 +5446,163 @@ def leer_ajustes():
 @app.put("/api/ajustes")
 def guardar_ajustes(cuerpo: dict = Body(default=None)):
     """Cambia ajustes. NO toca ningun proyecto: es el valor de los NUEVOS."""
+    datos = _cuerpo(cuerpo)
+    if "carpeta_proyectos" in datos:
+        nueva_carpeta = str(datos.get("carpeta_proyectos") or "").strip()
+        if nueva_carpeta:
+            destino = os.path.abspath(os.path.expanduser(nueva_carpeta))
+            os.makedirs(destino, exist_ok=True)
+            fijar_raiz_proyectos(destino)
+        else:
+            fijar_raiz_proyectos(RAIZ_POR_DEFECTO)
     try:
-        guardados = AJUSTES.guardar(_cuerpo(cuerpo))
+        guardados = AJUSTES.guardar(datos)
     except ValueError as fallo:
         raise ErrorApi(400, str(fallo))
     anotar_global("ajustes_guardados", {"ajustes": guardados})
     return {"ajustes": guardados, "costes": AJUSTES.tabla_de_costes()}
+
+
+def _tamano_carpeta(ruta):
+    total = 0
+    try:
+        for entrada in os.scandir(ruta):
+            if entrada.is_file(follow_symlinks=False):
+                total += entrada.stat(follow_symlinks=False).st_size
+            elif entrada.is_dir(follow_symlinks=False):
+                total += _tamano_carpeta(entrada.path)
+    except OSError:
+        pass
+    return total
+
+
+def _volumenes_detectados():
+    """Detecta volumenes externos montados (macOS /Volumes o particiones adicionales)."""
+    volumenes = []
+    if os.path.isdir("/Volumes"):
+        try:
+            st_root = os.stat("/")
+            for entrada in os.scandir("/Volumes"):
+                if entrada.is_symlink() or entrada.name.startswith("."):
+                    continue
+                try:
+                    st_vol = os.stat(entrada.path)
+                    if st_vol.st_dev != st_root.st_dev:
+                        vdu = shutil.disk_usage(entrada.path)
+                        volumenes.append({
+                            "nombre": entrada.name,
+                            "ruta": entrada.path,
+                            "libre_gb": round(vdu.free / (1024**3), 1),
+                            "total_gb": round(vdu.total / (1024**3), 1),
+                            "porcentaje_usado": round(((vdu.total - vdu.free) / vdu.total) * 100, 1) if vdu.total else 0,
+                            "sugerencia": os.path.join(entrada.path, "asVideoStudio", "proyectos"),
+                        })
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    return volumenes
+
+
+def _info_almacenamiento():
+    raiz = raiz_proyectos()
+    try:
+        du = shutil.disk_usage(raiz)
+        total_gb = round(du.total / (1024**3), 1)
+        libre_gb = round(du.free / (1024**3), 1)
+        usado_gb = round(du.used / (1024**3), 1)
+        pct = round((du.used / du.total) * 100, 1) if du.total else 0
+    except Exception:
+        total_gb = libre_gb = usado_gb = pct = 0
+
+    tamano_bytes = _tamano_carpeta(raiz)
+    tamano_mb = round(tamano_bytes / (1024**2), 1)
+
+    fichas = []
+    try:
+        fichas = Proyecto.listar(raiz)
+    except Exception:
+        pass
+
+    banco_actual = ""
+    if PASOS_MODULOS is not None and hasattr(PASOS_MODULOS, "medios"):
+        banco_actual = getattr(PASOS_MODULOS.medios, "BANCO", "")
+
+    return {
+        "carpeta_actual": raiz,
+        "carpeta_configurada": AJUSTES.carpeta_proyectos(),
+        "carpeta_por_defecto": RAIZ_POR_DEFECTO,
+        "es_por_defecto": (os.path.abspath(raiz) == os.path.abspath(RAIZ_POR_DEFECTO)),
+        "espacio": {
+            "total_gb": total_gb,
+            "libre_gb": libre_gb,
+            "usado_gb": usado_gb,
+            "porcentaje_usado": pct,
+        },
+        "proyectos": {
+            "total": len(fichas),
+            "tamano_mb": tamano_mb,
+        },
+        "banco": banco_actual,
+        "volumenes_detectados": _volumenes_detectados(),
+    }
+
+
+@app.get("/api/almacenamiento")
+def estado_almacenamiento():
+    """Informacion del disco, carpeta activa de proyectos y volumenes externos."""
+    return _info_almacenamiento()
+
+
+@app.put("/api/almacenamiento")
+def cambiar_almacenamiento(cuerpo: dict = Body(default=None)):
+    """Cambia la carpeta donde se guardan los proyectos e imagenes/videos."""
+    datos = _cuerpo(cuerpo)
+    nueva = str(datos.get("carpeta") or "").strip()
+    mover = bool(datos.get("mover_existentes", False))
+    origen_viejo = raiz_proyectos()
+
+    if not nueva or os.path.abspath(os.path.expanduser(nueva)) == os.path.abspath(RAIZ_POR_DEFECTO):
+        destino = RAIZ_POR_DEFECTO
+        para_ajustes = ""
+    else:
+        destino = os.path.abspath(os.path.expanduser(nueva))
+        para_ajustes = destino
+
+    try:
+        os.makedirs(destino, exist_ok=True)
+    except OSError as fallo:
+        raise ErrorApi(400, f"no se puede crear la carpeta destino: {fallo}")
+
+    # Probar permisos de escritura
+    test_file = os.path.join(destino, ".test_permisos")
+    try:
+        with open(test_file, "w") as f:
+            f.write("ok")
+        os.remove(test_file)
+    except OSError as fallo:
+        raise ErrorApi(400, f"la carpeta no tiene permisos de escritura: {fallo}")
+
+    copiados = 0
+    if mover and os.path.abspath(origen_viejo) != os.path.abspath(destino):
+        try:
+            for entrada in os.scandir(origen_viejo):
+                if entrada.is_dir() and os.path.isfile(os.path.join(entrada.path, "proyecto.json")):
+                    dest_proj = os.path.join(destino, entrada.name)
+                    shutil.copytree(entrada.path, dest_proj, dirs_exist_ok=True)
+                    copiados += 1
+        except Exception as fallo:
+            raise ErrorApi(500, f"error al copiar proyectos existentes: {fallo}")
+
+    fijar_raiz_proyectos(destino)
+    AJUSTES.guardar({"carpeta_proyectos": para_ajustes})
+    anotar_global("almacenamiento_cambiado", {"carpeta": destino, "proyectos_copiados": copiados})
+
+    return {
+        **_info_almacenamiento(),
+        "proyectos_copiados": copiados,
+        "mensaje": f"Almacenamiento cambiado a {destino}" + (f" ({copiados} proyectos copiados)" if copiados else ""),
+    }
 
 
 # ------------------------------------------------------------------ enlaces
@@ -6286,12 +6509,25 @@ def _asistente_listo():
 
     -> (listo, motivo, cuenta, cuentas, sin_probar)
 
-    «Con sesion» no basta: una cuenta logueada con el cupo agotado no contesta.
-    Por eso cada candidata lleva su SALUD (pasos/salud_cli.py, lo ultimo que
-    paso al hablarle) y solo cuenta como buena la que tiene sesion y no tiene
-    apuntado un fallo. `sin_probar` dice si alguna buena no se ha probado
-    nunca: la pantalla la prueba sola al abrir la burbuja.
+    Si Google Gemini Flash está activo (modo por defecto integrado sin coste),
+    está listo de inmediato sin depender de cuentas externas de pago.
     """
+    try:
+        from pasos import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        ficha = {
+            "id": "gemini",
+            "etiqueta": "Google Gemini Flash",
+            "correo": "Google Gemini Flash",
+            "plan": "Activo y Gratuito",
+            "sesion": True,
+            "salud": {"estado": "ok", "mensaje": "conectado", "para": "asistente", "cuando": ahora()},
+            "motivo": "",
+        }
+        return True, "", ficha, [ficha], False
+
     salud = _salud_cli()
     try:
         candidatas = _candidatas_del_asistente()
@@ -6327,7 +6563,7 @@ def _asistente_listo():
     if buenas:
         return True, "", buenas[0], fichas, sin_probar
     motivo = ("; ".join(f["motivo"] for f in fichas)
-              or "todavía no has entrado con tu cuenta de Claude")
+              or "el asistente no tiene sesión activa")
     return False, motivo, None, fichas, sin_probar
 
 
@@ -6345,39 +6581,23 @@ def _foto_para_asistente(pid, pantalla=None):
         f"pasos cargados: {'si' if PASOS_MODULOS is not None else 'NO (' + ERROR_PASOS + ')'}; "
         f"modo simulado: {'si' if simulado else 'no'}")
 
+    # -- motores del estudio
+    try:
+        from pasos import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        lineas.append("motores_activos: Guion y Asistente (Google Gemini Flash, gratuito $0.00); "
+                      "Voz y Locucion (Microsoft Edge-TTS neuronal, gratuito $0.00); "
+                      "Imagenes (YieldChat / Canvas Cinematografico HD, gratuito $0.00)")
+
     # -- claves y cuentas (sin ninguna clave dentro)
     try:
         resumen = _claves().resumen()
-        lineas.append("claves: OpenAI (imagenes) "
-                      + ("puesta" if resumen["openai"] else
-                         "SIN PONER (sin ella no se generan imagenes)")
-                      + "; Cartesia (voz) "
-                      + ("puesta" if resumen["cartesia"]["puesta"] else "sin poner")
-                      + "; Jamendo (musica) "
+        lineas.append("audio_opcional: Jamendo (musica) "
                       + ("puesta" if resumen["jamendo"]["puesta"] else "sin poner")
                       + "; FreeSound (efectos) "
                       + ("puesta" if resumen["freesound"]["puesta"] else "sin poner"))
-        cuentas = _cuentas_cli_para_pantalla()
-        if not any(c.get("guardada") for c in cuentas):
-            sesion = _sesion_de(_CUENTA_POR_DEFECTO_CLI)
-            lineas.append("cuentas de Claude (CLI): ninguna con sesion hecha en el "
-                          "almacen; se usa la sesion por defecto del CLI, que "
-                          + (f"esta conectada como {sesion.get('correo') or '?'}"
-                             f" ({sesion.get('plan') or 'plan ?'})"
-                             if sesion.get("conectada") else "NO tiene sesion"))
-        for cuenta in cuentas:
-            sesion = cuenta.get("sesion") or {}
-            intento = cuenta.get("intento") or {}
-            lineas.append(
-                f"cuenta de Claude '{cuenta['etiqueta'] or cuenta['id']}'"
-                f"{' (manda)' if cuenta.get('manda') else ''}: "
-                + (f"con sesion como {sesion.get('correo') or '?'} "
-                   f"({sesion.get('plan') or 'plan ?'})"
-                   if sesion.get("conectada") else "sin sesion")
-                + (f"; acceso en curso en estado '{intento.get('estado')}'"
-                   if intento else "")
-                + (f"; ultima llamada: {_salud_cli().describir(cuenta.get('salud'))}"
-                   if cuenta.get("salud") else ""))
     except Exception as fallo:  # noqa: BLE001
         lineas.append(f"claves: no se han podido leer ({fallo})")
 
@@ -7143,6 +7363,33 @@ def _correr_light_referencias(avisar, ctx, encargo):
     # que ensena a rotular mal con un ejemplo dibujado.
     idioma = str(encargo.get("idioma") or "").strip().lower()
     destino = os.path.join(ctx.proyecto.raiz, "estilo", "dibujadas")
+
+    aportadas = _aportadas_del_taller(ctx)
+    if aportadas and not pedidos:
+        # El usuario ha subido ilustraciones reales de referencia.
+        # Sus imagenes son la autoridad maxima del estilo del canal.
+        os.makedirs(destino, exist_ok=True)
+        rutas_hechas = []
+        ejes_lista = list(mod.EJES.keys())
+        from PIL import Image
+        for idx, eje in enumerate(ejes_lista):
+            img_origen = aportadas[idx % len(aportadas)]
+            ruta_eje = os.path.join(destino, f"{eje}.png")
+            try:
+                im = Image.open(img_origen)
+                im.save(ruta_eje, "PNG")
+            except Exception:
+                shutil.copyfile(img_origen, ruta_eje)
+            rutas_hechas.append(ruta_eje)
+        bloque["referencias"] = rutas_hechas
+        ctx.estado.actualizar_params("assets", {"estilo": bloque})
+        ctx.bitacora.anotar("estilo_dibujado", "assets", {
+            "ejes": ejes_lista, "coste_usd": 0.0,
+            "pedidos": "aportadas"})
+        avisar(1.0, f"{len(rutas_hechas)} referencias adoptadas de tus imágenes")
+        return {"rutas": rutas_hechas, "ejes": ejes_lista, "coste_usd": 0.0,
+                "origen": "aportadas"}
+
     hecho = mod.dibujar_desde_guia({"guia": bloque.get("guia")}, destino,
                                    ejes=pedidos, peticiones=peticiones,
                                    calidad=calidad, avisar=avisar,
@@ -7335,20 +7582,53 @@ def _correr_light_voz(avisar, ctx, encargo):
     light = _light()
     ficha_ritmo = light.ritmo_de(encargo.get("ritmo"))
     peticion = (encargo.get("feedback") or {}).get("voz") or ""
+    voz_id = (encargo.get("voz_id") or "").strip()
+    voz_prompt = (encargo.get("voz_prompt") or "").strip()
+    velocidad_pedida = (encargo.get("velocidad") or "").strip().lower()
+
+    # Si la voz ya se eligió a mano del catálogo y no hay feedback ni descripción personalizada:
+    if voz_id and (not voz_prompt or voz_prompt == "Voz seleccionada del catálogo, tono natural y profesional") and not peticion:
+        fichas = PASOS_MODULOS.p4_voz.listar_voces(encargo.get("idioma") or "es")
+        ficha = next((f for f in fichas if f["id"] == voz_id), None)
+        nombre = ficha["nombre"] if ficha else voz_id
+        vel = velocidad_pedida or ficha_ritmo["velocidad"]
+        cambios = {
+            "modelo": "sonic-3.5",
+            "voz_id": voz_id,
+            "voz_nombre": nombre,
+            "velocidad": vel,
+            "emociones": [],
+            "hueco_minimo": ficha_ritmo["hueco_minimo"],
+            "idioma": encargo["idioma"],
+        }
+        ctx.estado.actualizar_params("voz", cambios)
+        ctx.bitacora.anotar("voz_descrita", "voz", {
+            "encargo": voz_prompt or "Voz elegida a mano",
+            "voz": nombre, "velocidad": vel,
+            "velocidad_del_ritmo": not bool(velocidad_pedida), "ritmo": ficha_ritmo["id"]})
+        if callable(avisar):
+            avisar(1.0, f"«{nombre}» · {vel} · sin color · aire {ficha_ritmo['hueco_minimo']}s")
+        return dict(cambios, por_que="Voz seleccionada directamente del catálogo")
+
     elegido = PASOS_MODULOS.voz_descrita.proponer(
-        encargo["voz_prompt"], idioma=encargo["idioma"], avisar=avisar,
+        voz_prompt or "Voz seleccionada del catálogo, tono natural y profesional",
+        idioma=encargo["idioma"], avisar=avisar,
         proyecto_id=ctx.id, cwd=ctx.proyecto.raiz, peticion=peticion,
         ritmo=light.contexto_de_ritmo(encargo.get("ritmo")),
         # la voz elegida a mano (la clonada del canal): el agente solo pone
         # los mandos
-        voz_fija=encargo.get("voz_id") or "")
+        voz_fija=voz_id)
     cambios = {c: elegido[c] for c in ("modelo", "voz_id", "voz_nombre",
                                        "velocidad", "emociones", "hueco_minimo")
                if elegido.get(c) is not None}
     cambios["idioma"] = encargo["idioma"]
-    rellenada = not elegido.get("velocidad_pedida")
-    if rellenada:
-        cambios["velocidad"] = ficha_ritmo["velocidad"]
+    if encargo.get("velocidad"):
+        cambios["velocidad"] = encargo["velocidad"]
+        rellenada = False
+    else:
+        rellenada = not elegido.get("velocidad_pedida")
+        if rellenada:
+            cambios["velocidad"] = ficha_ritmo["velocidad"]
     cambios["hueco_minimo"] = ficha_ritmo["hueco_minimo"]
     ctx.estado.actualizar_params("voz", cambios)
     ctx.bitacora.anotar("voz_descrita", "voz", {

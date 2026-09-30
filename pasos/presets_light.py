@@ -555,17 +555,20 @@ def validar_encargo(crudo):
     limpio["tono_prompt"] = prompt
 
     voz = " ".join(str(datos.get("voz_prompt") or "").split())
-    if not voz:
-        raise ErrorEncargo("falta la voz: describe cómo quieres que suene "
-                           "(«grave, pausada, sin dramatismo»)")
-    limpio["voz_prompt"] = voz
-    # LA VOZ ELEGIDA A MANO, opcional: el id de una voz del catalogo (lo
-    # normal, la clonada del canal). Con ella la descripcion sigue valiendo
-    # --pone la velocidad y el color-- pero la voz no se elige: es esa.
     voz_id = " ".join(str(datos.get("voz_id") or "").split())
     if voz_id and not re.match(r"^[A-Za-z0-9_-]{8,64}$", voz_id):
-        raise ErrorEncargo("«voz_id» no parece un id de voz de Cartesia")
+        raise ErrorEncargo("«voz_id» no parece un id de voz válido")
+    if not voz and not voz_id:
+        raise ErrorEncargo("falta la voz: describe cómo quieres que suene "
+                           "(«grave, pausada, sin dramatismo») o elige una voz del catálogo")
+    limpio["voz_prompt"] = voz or "Voz seleccionada del catálogo, tono natural y profesional"
     limpio["voz_id"] = voz_id
+
+    velocidad = str(datos.get("velocidad") or "").strip().lower()
+    if velocidad in ("slow", "normal", "fast", "very_fast"):
+        limpio["velocidad"] = velocidad
+    else:
+        limpio["velocidad"] = ""
 
     # AQUI NO HAY PERSONAJES DEL CANAL NI LLAMADAS A LA ACCION, y las dos
     # ausencias son decisiones:

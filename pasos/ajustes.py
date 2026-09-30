@@ -67,6 +67,10 @@ POR_DEFECTO = {
     # porque es de la instalacion, no de la pantalla: desde el movil no hay
     # que volver a verla.
     "onboarding_visto": False,
+    # Carpeta donde se guardan los proyectos, imagenes y videos. Si esta vacio,
+    # se usa la ruta local por defecto (proyectos/). Permite apuntar a discos
+    # externos (e.g. /Volumes/MiDisco/asVideoStudio/proyectos).
+    "carpeta_proyectos": "",
 }
 
 
@@ -80,6 +84,7 @@ def leer():
     if salida.get("calidad_imagen") not in CALIDADES:
         salida["calidad_imagen"] = POR_DEFECTO["calidad_imagen"]
     salida["onboarding_visto"] = bool(salida.get("onboarding_visto"))
+    salida["carpeta_proyectos"] = str(salida.get("carpeta_proyectos") or "").strip()
     return salida
 
 
@@ -100,6 +105,8 @@ def guardar(cambios):
                 f"calidad {valor!r}: solo {', '.join(CALIDADES)}")
         if clave == "onboarding_visto" and not isinstance(valor, bool):
             raise ValueError("onboarding_visto es verdadero o falso")
+        if clave == "carpeta_proyectos" and not isinstance(valor, str):
+            raise ValueError("carpeta_proyectos debe ser una ruta de texto")
         actual[clave] = valor
     escribir_json(RUTA, actual)
     return actual
@@ -108,6 +115,11 @@ def guardar(cambios):
 def calidad_imagen():
     """La calidad con la que arranca un proyecto nuevo."""
     return leer()["calidad_imagen"]
+
+
+def carpeta_proyectos():
+    """La carpeta de almacenamiento de proyectos (vacio = defecto)."""
+    return leer().get("carpeta_proyectos", "").strip()
 
 
 def coste_por_imagen(calidad, tamano=TAMANO):

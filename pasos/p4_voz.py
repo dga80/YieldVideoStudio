@@ -330,6 +330,8 @@ def resolver_params(params):
         return valor
 
     modelo = str(elegir("modelo", MODELO_POR_DEFECTO)).strip()
+    if modelo == "sonic-multilingual":
+        modelo = "sonic-3.5"
     if modelo not in MODELOS:
         raise ValueError(f"modelo de voz desconocido: {modelo!r}. "
                          f"Validos: {', '.join(MODELOS)}")
@@ -1224,6 +1226,243 @@ VOCES_BASE = [
      "idioma": "en"},
 ]
 
+VOCES_EDGE_FICHAS = [
+    {
+        "id": "es-ES-AlvaroNeural",
+        "nombre": "Álvaro (Neural) — España",
+        "descripcion": "Voz masculina natural de radio y documental, seria, serena y cercana",
+        "idioma": "es",
+        "genero": "masculino",
+        "pais": "ES",
+        "locales": ["es-ES"],
+        "locales_nativos": ["es-ES"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "es-ES-ElviraNeural",
+        "nombre": "Elvira (Neural) — España",
+        "descripcion": "Voz femenina natural, clara, formal y pausada para narración documental",
+        "idioma": "es",
+        "genero": "femenino",
+        "pais": "ES",
+        "locales": ["es-ES"],
+        "locales_nativos": ["es-ES"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "es-ES-XimenaNeural",
+        "nombre": "Ximena (Neural) — España",
+        "descripcion": "Voz femenina joven, amigable, dinámica y expresiva",
+        "idioma": "es",
+        "genero": "femenino",
+        "pais": "ES",
+        "locales": ["es-ES"],
+        "locales_nativos": ["es-ES"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "es-MX-JorgeNeural",
+        "nombre": "Jorge (Neural) — México",
+        "descripcion": "Voz masculina periodística, madura, profesional y explicativa",
+        "idioma": "es",
+        "genero": "masculino",
+        "pais": "MX",
+        "locales": ["es-MX"],
+        "locales_nativos": ["es-MX"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "es-MX-DaliaNeural",
+        "nombre": "Dalia (Neural) — México",
+        "descripcion": "Voz femenina cálida, clara y natural con acento mexicano",
+        "idioma": "es",
+        "genero": "femenino",
+        "pais": "MX",
+        "locales": ["es-MX"],
+        "locales_nativos": ["es-MX"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "es-CO-GonzaloNeural",
+        "nombre": "Gonzalo (Neural) — Colombia",
+        "descripcion": "Voz masculina narrativa, tranquila, clara y reflexiva",
+        "idioma": "es",
+        "genero": "masculino",
+        "pais": "CO",
+        "locales": ["es-CO"],
+        "locales_nativos": ["es-CO"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "es-AR-TomasNeural",
+        "nombre": "Tomás (Neural) — Argentina",
+        "descripcion": "Voz masculina enérgica, moderna y fluida",
+        "idioma": "es",
+        "genero": "masculino",
+        "pais": "AR",
+        "locales": ["es-AR"],
+        "locales_nativos": ["es-AR"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "en-US-ChristopherNeural",
+        "nombre": "Christopher (Neural)",
+        "descripcion": "Male American English voice, authoritative, natural documentary narrator",
+        "idioma": "en",
+        "genero": "masculino",
+        "pais": "US",
+        "locales": ["en-US"],
+        "locales_nativos": ["en-US"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "en-US-GuyNeural",
+        "nombre": "Guy (Neural)",
+        "descripcion": "Male American English voice, warm, casual and engaging storyteller",
+        "idioma": "en",
+        "genero": "masculino",
+        "pais": "US",
+        "locales": ["en-US"],
+        "locales_nativos": ["en-US"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "en-US-JennyNeural",
+        "nombre": "Jenny (Neural)",
+        "descripcion": "Female American English voice, clear, pleasant and versatile narrator",
+        "idioma": "en",
+        "genero": "femenino",
+        "pais": "US",
+        "locales": ["en-US"],
+        "locales_nativos": ["en-US"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "fr-FR-HenriNeural",
+        "nombre": "Henri (Neural)",
+        "descripcion": "Voix masculine française naturelle, posée et documentaire",
+        "idioma": "fr",
+        "genero": "masculino",
+        "pais": "FR",
+        "locales": ["fr-FR"],
+        "locales_nativos": ["fr-FR"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "fr-FR-DeniseNeural",
+        "nombre": "Denise (Neural)",
+        "descripcion": "Voix féminine française claire, élégante et expressive",
+        "idioma": "fr",
+        "genero": "femenino",
+        "pais": "FR",
+        "locales": ["fr-FR"],
+        "locales_nativos": ["fr-FR"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "de-DE-ConradNeural",
+        "nombre": "Conrad (Neural)",
+        "descripcion": "Männliche deutsche Stimme, sachlich, ruhig und dokumentarisch",
+        "idioma": "de",
+        "genero": "masculino",
+        "pais": "DE",
+        "locales": ["de-DE"],
+        "locales_nativos": ["de-DE"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "de-DE-KatjaNeural",
+        "nombre": "Katja (Neural)",
+        "descripcion": "Weibliche deutsche Stimme, klar und professionell",
+        "idioma": "de",
+        "genero": "femenino",
+        "pais": "DE",
+        "locales": ["de-DE"],
+        "locales_nativos": ["de-DE"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "it-IT-DiegoNeural",
+        "nombre": "Diego (Neural)",
+        "descripcion": "Voce maschile italiana naturale, calda e coinvolgente",
+        "idioma": "it",
+        "genero": "masculino",
+        "pais": "IT",
+        "locales": ["it-IT"],
+        "locales_nativos": ["it-IT"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "it-IT-ElsaNeural",
+        "nombre": "Elsa (Neural)",
+        "descripcion": "Voce femminile italiana espressiva, chiara e melodica",
+        "idioma": "it",
+        "genero": "femenino",
+        "pais": "IT",
+        "locales": ["it-IT"],
+        "locales_nativos": ["it-IT"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "pt-BR-AntonioNeural",
+        "nombre": "Antonio (Neural)",
+        "descripcion": "Voz masculina natural, fluida e jornalística",
+        "idioma": "pt",
+        "genero": "masculino",
+        "pais": "BR",
+        "locales": ["pt-BR"],
+        "locales_nativos": ["pt-BR"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+    {
+        "id": "pt-BR-FranciscaNeural",
+        "nombre": "Francisca (Neural)",
+        "descripcion": "Voz feminina acolhedora, expressiva e clara",
+        "idioma": "pt",
+        "genero": "femenino",
+        "pais": "BR",
+        "locales": ["pt-BR"],
+        "locales_nativos": ["pt-BR"],
+        "pro": False,
+        "publica": True,
+        "nativa": True,
+    },
+]
+
 
 def _ficha_voz(cruda):
     locales, nativos = [], []
@@ -1249,6 +1488,8 @@ def _ficha_voz(cruda):
 
 def _descargar_voces():
     api_key = motor.cargar_api_key()
+    if not api_key or api_key == "edge-tts":
+        return copy.deepcopy(VOCES_EDGE_FICHAS)
     cabeceras = {"X-API-Key": api_key, "Cartesia-Version": motor.API_VERSION}
     fichas, cursor = [], None
     vistas = set()
@@ -1330,6 +1571,8 @@ def _huella_clave():
     """
     try:
         clave = motor.cargar_api_key()
+        if not clave or clave == "edge-tts":
+            return ""
     except BaseException:                                       # noqa: BLE001
         # cargar_api_key levanta SystemExit cuando no hay clave configurada, y
         # aqui eso no es un fallo: es "no se puede saber", y entonces la huella
@@ -1346,28 +1589,14 @@ def _hay_clave():
     SystemExit: esta escrito como CLI y aborta cuando no la encuentra.
     """
     try:
-        return bool(comun.cargar_motor("voz_cartesia", "voz.py").cargar_api_key())
+        clave = comun.cargar_motor("voz_cartesia", "voz.py").cargar_api_key()
+        return bool(clave and clave != "edge-tts")
     except BaseException:                                     # noqa: BLE001
         return False
 
 
 def listar_voces(idioma=None, refrescar=False, solo_nativas=False):
-    """Catalogo de voces de Cartesia, cacheado en disco.
-
-    El catalogo cambia poco y son varias paginas de red: se guarda en
-    cache/voces_cartesia.json y se refresca solo si caduca o si se pide.
-
-    EL CACHE SABE CON QUE CLAVE SE BAJO (06-09-2026), y sin eso el dia que se
-    cambia de cuenta de Cartesia la pantalla miente durante una semana: se puso
-    la clave de la cuenta donde vive la voz clonada del canal, y el desplegable
-    siguio diciendo «no hay voces clonadas en esta cuenta» porque el catalogo
-    cacheado --934 voces bajadas con la clave anterior-- todavia estaba dentro
-    de sus siete dias. No fallaba nada y no habia nada que mirar: por eso se
-    tarda en encontrarlo.
-
-    Se guarda la HUELLA de la clave, no la clave. Un cache de antes de esta
-    fecha no la lleva, asi que se refresca una vez y ya la tiene.
-    """
+    """Catalogo de voces de Cartesia o Edge-TTS, cacheado en disco."""
     cache = None
     if os.path.exists(RUTA_CACHE_VOCES):
         try:
@@ -1392,19 +1621,13 @@ def listar_voces(idioma=None, refrescar=False, solo_nativas=False):
     if simulado():
         # sin red en modo simulado: lo que haya cacheado, y si no el minimo util
         fichas = cache["voces"] if isinstance(cache, dict) and cache.get("voces") \
-            else copy.deepcopy(VOCES_BASE)
+            else copy.deepcopy(VOCES_EDGE_FICHAS)
         return _filtrar_idioma(copy.deepcopy(fichas), idioma)
 
-    # SIN CLAVE NO SE PIDE NADA, y se devuelve el minimo util en vez de fallar.
-    # Es el estado de una instalacion recien puesta: nadie ha entrado todavia en
-    # Configuracion. `voz.cargar_api_key` esta escrito como CLI y aborta con
-    # SystemExit, que NO es un `Exception`, asi que se colaba por debajo del
-    # try de abajo, subia entera por la ruta de la API y salia como un 500 sin
-    # texto -- con la pantalla diciendo «cargando tus voces...» para siempre.
+    # Si no hay clave de Cartesia configurada, usar el catálogo de Edge-TTS
     if not _hay_clave():
-        fichas = (cache["voces"] if isinstance(cache, dict) and cache.get("voces")
-                  else copy.deepcopy(VOCES_BASE))
-        return _filtrar_idioma(copy.deepcopy(fichas), idioma)
+        fichas = copy.deepcopy(VOCES_EDGE_FICHAS)
+        return _filtrar_idioma(copy.deepcopy(fichas), idioma, solo_nativas)
 
     try:
         fichas = _descargar_voces()

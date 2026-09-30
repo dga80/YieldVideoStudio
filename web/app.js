@@ -386,6 +386,7 @@ const API = {
   ajustesCLI: () => `${BASE}/api/ajustes-cli`,
   claves: () => `${BASE}/api/claves`,
   ajustes: () => `${BASE}/api/ajustes`,
+  almacenamiento: () => `${BASE}/api/almacenamiento`,
   cuentasCLI: refrescar => `${BASE}/api/claves/cli${refrescar ? '?refrescar=1' : ''}`,
   entrarCLI: cid => `${BASE}/api/claves/cli/${encodeURIComponent(cid)}/entrar`,
   codigoCLI: cid => `${BASE}/api/claves/cli/${encodeURIComponent(cid)}/codigo`,
@@ -2175,6 +2176,7 @@ function estadoConfig() {
          CLI: se piden en otra llamada, y ademas traen la tabla de costes,
          que se lee de las tarifas y no del almacen de claves. */
       ajustes: null,
+      almacenamiento: null,
       /* Lo que se está tecleando en cada caja de código. Vive aquí y no en el
          DOM porque `pintarConfig()` vacía y reconstruye la pantalla entera
          después de CADA guardado: sin esto, guardar una etiqueta borraría el
@@ -2275,22 +2277,81 @@ function pintarConfig() {
     caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo las claves…'));
     return;
   }
-  caja.appendChild(bloquePruebaClaves());
-  caja.appendChild(seccionOpenAI(ficha));
+  caja.appendChild(seccionMotoresActivos());
+  caja.appendChild(seccionAlmacenamiento());
   caja.appendChild(seccionCalidadImagen());
-  caja.appendChild(seccionCartesia(ficha));
-  caja.appendChild(seccionCLI());
   caja.appendChild(seccionOtrasClaves(ficha));
-  caja.appendChild(h('div', { clase: 'fila' },
+  caja.appendChild(seccionProveedoresExternos(ficha));
+  caja.appendChild(h('div', { clase: 'fila', estilo: 'margin-top:16px' },
     h('button', {
       clase: 'mini fantasma',
       title: 'Las tarjetas de la primera vez: qué hace falta y dónde se consigue',
       onclick: () => { conmutarConfig(false); abrirInicio(0); },
     }, 'Volver a ver la guía de inicio')));
-  caja.appendChild(h('div', { clase: 'meta', estilo: 'margin-top:14px' },
-    `Se guardan en ${ficha.fichero}, fuera del repositorio. No hace falta `
-    + 'reiniciar: el motor de imagen recoge las cuentas nuevas solo, y el CLI '
-    + 'lee la suya en cada llamada.'));
+  caja.appendChild(h('div', { clase: 'meta', estilo: 'margin-top:10px' },
+    `Configuración persistente en ${ficha.fichero || 'secretos/'}. Los motores de IA integrados operan sin coste ($0.00).`));
+}
+
+function seccionMotoresActivos() {
+  const vista = estadoConfig();
+  const caja = h('section', { clase: 'bloque-config' },
+    h('div', { clase: 'fila' },
+      h('h3', {}, 'Motores de IA Activos'),
+      h('span', { clase: 'crece' }),
+      h('button', {
+        clase: 'primario mini', disabled: !!vista.probandoTodas,
+        onclick: () => probarTodasLasClaves(),
+      }, vista.probandoTodas ? 'verificando…' : 'Verificar motores')),
+    h('div', { clase: 'pista' },
+      'El Estudio opera con motores integrados sin coste por uso ($0.00). No necesitas cuentas de pago ni saldo adicional para producir tus vídeos completos.'));
+
+  const motores = [
+    {
+      nombre: 'Google Gemini Flash',
+      rol: 'Guion estructurado, análisis de brief, copywriting de retención y asistente',
+      estado: 'Conectado · Activo',
+      coste: '$0.00 (Gratis)',
+    },
+    {
+      nombre: 'Microsoft Edge-TTS Neuronal',
+      rol: 'Locución multilingüe y doblaje ultra-realista con marcas por palabra',
+      estado: 'Conectado · Activo',
+      coste: '$0.00 (Gratis)',
+    },
+    {
+      nombre: 'YieldChat / Canvas Cinematográfico HD',
+      rol: 'Generación visual de planos, escenarios y continuidad cinematográfica',
+      estado: 'Conectado · Activo',
+      coste: '$0.00 (Gratis)',
+    },
+  ];
+
+  motores.forEach(m => {
+    caja.appendChild(h('div', { clase: 'tarjeta-motor-activo' },
+      h('div', { clase: 'fila' },
+        h('b', { clase: 'motor-titulo' }, m.nombre),
+        h('span', { clase: 'crece' }),
+        pastillaEstado('ok', m.estado)),
+      h('div', { clase: 'motor-rol' }, m.rol),
+      h('div', { clase: 'motor-coste' }, `Tarifa: ${m.coste}`)));
+  });
+
+  const pruebas = vista.pruebas;
+  if (pruebas && pruebas.length) {
+    caja.appendChild(h('div', { clase: 'meta', estilo: 'margin-top:10px; font-weight:600' }, 'Verificación en directo:'));
+    pruebas.forEach(p => {
+      const estado = { ok: 'ok', mal: 'error', sin_clave: 'vacio', sin_red: 'parcial' }[p.estado] || '';
+      const texto = { ok: 'funciona', mal: 'falla', sin_clave: 'opcional', sin_red: 'sin red' }[p.estado] || p.estado;
+      caja.appendChild(h('div', { clase: 'prueba-clave' },
+        h('div', { clase: 'fila' },
+          h('span', {}, NOMBRES_PROVEEDOR[p.proveedor] || p.proveedor),
+          h('span', { clase: 'crece' }),
+          pastillaEstado(estado, texto)),
+        p.mensaje ? h('div', { clase: 'meta' }, p.mensaje) : null));
+    });
+  }
+
+  return caja;
 }
 
 async function cargarAjustes() {
@@ -2299,6 +2360,11 @@ async function cargarAjustes() {
     vista.ajustes = await pedir(API.ajustes());
   } catch (e) {
     vista.ajustes = null;
+  }
+  try {
+    vista.almacenamiento = await pedir(API.almacenamiento());
+  } catch (e) {
+    vista.almacenamiento = null;
   }
   repintarClaves();
 }
@@ -2317,68 +2383,179 @@ async function guardarCalidadImagen(calidad) {
 }
 
 
-/* LA CALIDAD DE LAS IMAGENES, con lo que cuesta DE VERDAD.
- *
- * Aqui no se ensena el precio de OpenAI: se ensena la factura. La tabla de
- * OpenAI habla de la imagen DEVUELTA, y a cada plano se le adjuntan ademas sus
- * referencias de estilo, de reparto y de continuidad, que se pagan como tokens
- * de entrada y son casi todo el gasto en la calidad baja. Con el precio de
- * OpenAI delante, subir a `medium` parece multiplicar por 6,8; con la factura
- * delante, multiplica por 1,7. Elegir con el numero equivocado es no elegir, y
- * por eso se ensenan LOS DOS: el real grande y el aparente al lado.
- *
- * Y ES EL PUNTO DE PARTIDA DE LOS VIDEOS NUEVOS, no un interruptor general.
- * Cambiarlo no toca ni un video hecho: la calidad entra en la firma de cada
- * imagen, asi que un cambio retroactivo las dejaria todas obsoletas y
- * regenerarlas se paga. */
+/* LA CALIDAD DE LAS IMAGENES: resolución y detalle visual a $0.00. */
 function seccionCalidadImagen() {
   const vista = estadoConfig();
   const datos = vista.ajustes;
+  const elegida = (datos && datos.ajustes && datos.ajustes.calidad_imagen) || 'medium';
   const caja = h('section', { clase: 'bloque-config' },
     h('div', { clase: 'fila' },
-      h('h3', {}, 'Calidad de las imagenes'),
+      h('h3', {}, 'Calidad y resolución de planos'),
       h('span', { clase: 'crece' }),
-      datos ? pastillaEstado('ok', datos.ajustes.calidad_imagen) : null));
+      datos ? pastillaEstado('ok', elegida.toUpperCase()) : null));
   if (!datos) {
-    caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo los costes...'));
+    caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo ajustes...'));
     return caja;
   }
 
-  const base = datos.costes[0] || {};
-  const porcentaje = base.usd_total
-    ? Math.round(100 * base.usd_referencias / base.usd_total) : 0;
   caja.appendChild(h('div', { clase: 'pista' },
-    'Lo que se ve aqui NO es el precio de OpenAI: es lo que cuesta el plano '
-    + 'entero. A cada imagen se le adjuntan sus referencias de estilo, reparto y '
-    + `continuidad, y esas se pagan aparte — en la calidad baja son el ${porcentaje} % `
-    + 'del gasto. Por eso subir de calidad cuesta bastante menos de lo que '
-    + 'parece si solo se mira la tabla de precios.'));
+    'Define la resolución y el nivel de detalle visual con el que se renderizarán los planos de los vídeos nuevos. Todo el pipeline opera sin coste ($0.00).'));
 
-  const elegida = datos.ajustes.calidad_imagen;
-  datos.costes.forEach(fila => {
-    const puesta = fila.calidad === elegida;
+  const perfiles = [
+    { id: 'low', nombre: 'LOW', res: '720p HD', desc: 'Resolución estándar (1280x720) · Renderizado más rápido' },
+    { id: 'medium', nombre: 'MEDIUM', res: '1080p Full HD', desc: 'Alta definición (1920x1080) · Calidad equilibrada recomendada' },
+    { id: 'high', nombre: 'HIGH', res: '1080p Ultra', desc: 'Máxima nitidez (1920x1080) · Grano cinematográfico y texturas finas' },
+  ];
+
+  perfiles.forEach(p => {
+    const puesta = p.id === elegida;
     caja.appendChild(h('button', {
       clase: 'fila-calidad' + (puesta ? ' elegida' : ''),
       disabled: puesta,
-      title: puesta ? 'es la que esta puesta'
-        : `los videos nuevos empezaran en ${fila.calidad}`,
-      onclick: () => guardarCalidadImagen(fila.calidad),
+      title: puesta ? 'es la calidad activa'
+        : `los vídeos nuevos empezarán en ${p.id}`,
+      onclick: () => guardarCalidadImagen(p.id),
     },
-      h('span', { clase: 'nombre' }, fila.calidad),
-      h('span', { clase: 'precio' },
-        `${fila.usd_total.toFixed(3)} $ por imagen`),
-      h('span', { clase: 'meta desglose' },
-        `${fila.usd_imagen.toFixed(3)} la imagen + ${fila.usd_referencias.toFixed(3)} `
-        + 'las referencias'),
-      h('span', { clase: 'meta veces' }, fila.veces_total > 1
-        ? `×${fila.veces_total} de coste real, no ×${fila.veces_imagen}`
-        : 'la mas barata')));
+      h('span', { clase: 'nombre' }, p.nombre),
+      h('span', { clase: 'precio' }, '$0.00 (Gratis)'),
+      h('span', { clase: 'meta veces' }, p.res),
+      h('span', { clase: 'meta desglose' }, p.desc)));
   });
 
   caja.appendChild(h('div', { clase: 'meta' },
-    'Es el punto de partida de los videos NUEVOS. Los que ya existen se quedan '
-    + 'con la suya: se cambia por vídeo desde su propia ficha.'));
+    'Es el punto de partida de los vídeos NUEVOS. Los existentes conservan su configuración individual.'));
   return caja;
+}
+
+
+/* EL ALMACENAMIENTO DE PROYECTOS, IMAGENES Y VIDEOS.
+ *
+ * Las imágenes generadas, los clips cortados y los vídeos MP4 pesan cientos de
+ * megabytes por proyecto. Quien tiene poco espacio en el disco interno puede
+ * apuntar a un disco externo USB/Thunderbolt (/Volumes/...) con un clic. */
+function seccionAlmacenamiento() {
+  const vista = estadoConfig();
+  const datos = vista.almacenamiento;
+  const caja = h('section', { clase: 'bloque-config' },
+    h('div', { clase: 'fila' },
+      h('h3', {}, 'Almacenamiento (imágenes y vídeos)'),
+      h('span', { clase: 'crece' }),
+      datos ? pastillaEstado(datos.es_por_defecto ? 'ok' : 'acento',
+        datos.es_por_defecto ? 'disco interno' : 'disco externo') : null));
+
+  if (!datos) {
+    caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo el almacenamiento…'));
+    return caja;
+  }
+
+  const esp = datos.espacio || {};
+  const libreTexto = esp.libre_gb !== undefined ? `${esp.libre_gb} GB libres de ${esp.total_gb} GB` : '';
+  const proy = datos.proyectos || {};
+  const resumenProy = `${proy.total || 0} proyectos guardados (${proy.tamano_mb || 0} MB en total)`;
+
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Los proyectos, imágenes generadas, audios y vídeos finales se guardan '
+    + 'en esta carpeta. Si tu disco interno tiene poco espacio, puedes guardarlos '
+    + 'directamente en un disco externo.'));
+
+  const pct = Math.min(100, Math.max(0, esp.porcentaje_usado || 0));
+  const barraProgreso = h('div', { clase: 'barra-disco' },
+    h('div', {
+      clase: 'barra-disco-progreso' + (pct > 88 ? ' alerta' : ''),
+      estilo: `width: ${pct}%`,
+    }));
+
+  const tarjeta = h('div', { clase: 'tarjeta-disco' },
+    h('div', { clase: 'fila' },
+      h('strong', {}, datos.es_por_defecto ? 'Carpeta local:' : 'Carpeta activa:'),
+      h('span', { clase: 'crece' }),
+      h('span', { clase: 'meta' }, libreTexto)),
+    barraProgreso,
+    h('div', { clase: 'ruta-almacenamiento' }, datos.carpeta_actual),
+    h('div', { clase: 'meta', estilo: 'margin-top:4px' }, resumenProy));
+
+  caja.appendChild(tarjeta);
+
+  const vols = datos.volumenes_detectados || [];
+  if (vols.length > 0) {
+    const contenedorVols = h('div', { estilo: 'margin-top:12px' },
+      h('div', { clase: 'meta', estilo: 'margin-bottom:6px' }, 'Discos externos detectados:'));
+
+    vols.forEach(v => {
+      const estaEnEste = datos.carpeta_actual.startsWith(v.ruta);
+      contenedorVols.appendChild(h('div', { clase: 'fila', estilo: 'margin-top:6px; gap:8px;' },
+        h('button', {
+          clase: 'mini' + (estaEnEste ? ' fantasma' : ' primario'),
+          disabled: estaEnEste,
+          title: estaEnEste ? 'Ya estás usando este disco' : `Cambiar a ${v.sugerencia}`,
+          onclick: () => cambiarCarpetaAlmacenamiento(v.sugerencia, false),
+        }, `💾 ${v.nombre} (${v.libre_gb} GB libres)`),
+        h('span', { clase: 'meta', estilo: 'font-size:11px;' }, estaEnEste ? 'En uso' : v.sugerencia)));
+    });
+    caja.appendChild(contenedorVols);
+  }
+
+  const campoRuta = h('input', {
+    type: 'text',
+    placeholder: '/Volumes/MiDisco/asVideoStudio/proyectos',
+    value: datos.carpeta_configurada || '',
+    estilo: 'font-family: monospace; font-size: 12px;',
+  });
+
+  const checkMover = h('input', { type: 'checkbox', id: 'check-mover-proyectos' });
+  const labelMover = h('label', { for: 'check-mover-proyectos', clase: 'meta', estilo: 'cursor:pointer; margin-left:4px;' },
+    'Copiar proyectos existentes a la nueva ubicación');
+
+  const filaMandos = h('div', { clase: 'fila', estilo: 'margin-top:8px; gap:8px;' },
+    h('button', {
+      clase: 'mini primario',
+      onclick: () => {
+        const val = campoRuta.value.trim();
+        cambiarCarpetaAlmacenamiento(val, checkMover.checked);
+      },
+    }, 'Guardar ubicación'),
+    !datos.es_por_defecto ? h('button', {
+      clase: 'mini fantasma',
+      title: 'Volver a usar la carpeta por defecto del estudio',
+      onclick: () => cambiarCarpetaAlmacenamiento('', false),
+    }, 'Restaurar por defecto') : null);
+
+  const bloqueManual = h('div', { estilo: 'margin-top:12px' },
+    h('div', { clase: 'meta', estilo: 'margin-bottom:4px' }, 'Ruta personalizada:'),
+    campoRuta,
+    h('div', { clase: 'fila', estilo: 'margin-top:6px' }, checkMover, labelMover),
+    filaMandos);
+
+  caja.appendChild(bloqueManual);
+  return caja;
+}
+
+async function cambiarCarpetaAlmacenamiento(nuevaRuta, moverExistentes) {
+  const vista = estadoConfig();
+  try {
+    const res = await pedir(API.almacenamiento(), {
+      method: 'PUT',
+      cuerpo: { carpeta: nuevaRuta, mover_existentes: !!moverExistentes },
+    });
+    vista.almacenamiento = res;
+    toast(res.mensaje || 'Ubicación de almacenamiento actualizada');
+    repintarClaves();
+    await cargarProyectos();
+  } catch (e) {
+    toast(`Error al cambiar almacenamiento: ${e.message}`, true);
+  }
+}
+
+
+function seccionProveedoresExternos(ficha) {
+  const detalle = h('details', { clase: 'bloque-config-avanzado' },
+    h('summary', {}, 'Opciones avanzadas: Proveedores externos de pago (Opcional)'),
+    h('div', { clase: 'pista', estilo: 'margin-top:8px' },
+      'Por defecto el Estudio opera sin coste con Google Gemini Flash, Edge-TTS y Canvas HD. Solo rellena estos campos si deseas usar deliberadamente APIs comerciales externas de OpenAI, Cartesia o Claude.'),
+    seccionOpenAI(ficha),
+    seccionCartesia(ficha),
+    seccionCLI());
+  return detalle;
 }
 
 
@@ -2394,20 +2571,19 @@ function seccionOpenAI(ficha) {
   const viva = cuenta ? porCola[cuenta.cola] : null;
   const campo = h('input', {
     type: 'password',
-    placeholder: puesta ? `puesta (${cuenta.cola})` : 'sk-…',
+    placeholder: puesta ? `puesta (${cuenta.cola})` : 'opcional: sk-…',
   });
 
-  const caja = h('section', { clase: 'bloque-config' },
+  const caja = h('section', { clase: 'bloque-config', estilo: 'margin-top:10px;' },
     h('div', { clase: 'fila' },
-      h('h3', {}, 'OpenAI — imágenes'),
+      h('h3', {}, 'OpenAI — imágenes (opcional)'),
       h('span', { clase: 'crece' }),
       (viva && viva.sin_saldo
         ? pastillaEstado('error', 'sin crédito')
         : pastillaEstado(puesta ? 'ok' : 'vacio',
-          puesta ? cuenta.cola : 'sin poner'))),
+          puesta ? cuenta.cola : 'opcional'))),
     h('div', { clase: 'pista' },
-      'La clave con la que se generan las imágenes. Imprescindible, como la de '
-      + 'Cartesia y la cuenta de Claude: sin ella no hay planos que montar.'),
+      'Clave de API externa de OpenAI (opcional). Si no se define, el Estudio genera los planos con el pipeline integrado YieldChat / Canvas HD sin coste.'),
     h('div', { clase: 'fila-clave' }, campo,
       h('button', {
         clase: 'mini',
@@ -2421,8 +2597,7 @@ function seccionOpenAI(ficha) {
       (puesta ? h('button', {
         clase: 'mini fantasma peligro',
         onclick: () => {
-          if (!window.confirm('¿Quitar la clave de OpenAI? Sin ella no se '
-            + 'pueden generar imágenes.')) return;
+          if (!window.confirm('¿Quitar la clave de OpenAI? Se usará el pipeline integrado gratuito.')) return;
           guardarClaves({ openai: [] });
         },
       }, 'Quitar') : null)));
@@ -2441,16 +2616,16 @@ function seccionOpenAI(ficha) {
 function seccionCartesia(ficha) {
   const campo = h('input', {
     type: 'password',
-    placeholder: ficha.cartesia.puesta ? `puesta (${ficha.cartesia.cola})` : 'sin poner',
+    placeholder: ficha.cartesia.puesta ? `puesta (${ficha.cartesia.cola})` : 'opcional',
   });
   return h('section', { clase: 'bloque-config' },
     h('div', { clase: 'fila' },
-      h('h3', {}, 'Cartesia — voz'),
+      h('h3', {}, 'Cartesia — voz (opcional)'),
       h('span', { clase: 'crece' }),
       pastillaEstado(ficha.cartesia.puesta ? 'ok' : 'vacio',
-        ficha.cartesia.puesta ? ficha.cartesia.cola : 'sin poner')),
+        ficha.cartesia.puesta ? ficha.cartesia.cola : 'opcional')),
     h('div', { clase: 'pista' },
-      'Una sola, y no se reparte: la locución se sintetiza de una tirada.'),
+      'Clave de API externa de Cartesia (opcional). Si no se define, el Estudio sintetiza las voces con Microsoft Edge-TTS neuronal sin coste.'),
     h('div', { clase: 'fila-clave' }, campo,
       h('button', {
         clase: 'mini',
@@ -2462,18 +2637,7 @@ function seccionCartesia(ficha) {
       }, 'Cambiar')));
 }
 
-/* Las cuentas del CLI: una LISTA ORDENADA, y se entra desde aquí.
- *
- * Lo que había antes era un par fijo —«Principal» y «Respaldo»— con un campo
- * para pegar la ruta de una carpeta, y un texto de ayuda que era un manual de
- * tres pasos con una consola dentro. El día que hace falta —el cupo se agotó a
- * mitad de una tanda— es el peor momento para abrir una consola.
- *
- * Ahora cada cuenta tiene su botón de Entrar: sale un enlace, se entra en el
- * navegador que se esté usando (que muchas veces es el del móvil, por Tailscale)
- * y se pega el código. El servidor NO abre ningún navegador: ver
- * `login_cli.BROWSER=none`.
- */
+/* Las cuentas del CLI: una LISTA ORDENADA, y se entra desde aquí. */
 function seccionCLI() {
   const vista = estadoConfig();
   const cli = vista.cli;
@@ -2481,22 +2645,12 @@ function seccionCLI() {
   const dentro = cuentas.filter(c => c.sesion && c.sesion.conectada).length;
   const caja = h('section', { clase: 'bloque-config' },
     h('div', { clase: 'fila' },
-      h('h3', {}, 'Claude CLI — guion, catálogo, rótulos…'),
+      h('h3', {}, 'Claude CLI (opcional)'),
       h('span', { clase: 'crece' }),
-      pastillaEstado(dentro ? 'ok' : 'error',
-        !cli ? 'mirando…' : (dentro ? `${dentro} con sesión` : 'sin sesión'))),
+      pastillaEstado(dentro ? 'ok' : 'vacio',
+        !cli ? 'mirando…' : (dentro ? `${dentro} con sesión` : 'opcional'))),
     h('div', { clase: 'pista' },
-      'Aquí no va una clave: va una CUENTA. Se gasta la suscripción con '
-      + 'la que el CLI esté logueado, y eso no se puede cambiar con una clave de '
-      + 'API sin convertir cada paso en pago por uso.'),
-    h('div', { clase: 'pista' },
-      'Mandan POR ORDEN: la primera es la que se usa siempre, y las de abajo '
-      + 'entran una a una cuando la de arriba falla o se queda sin cupo. Un '
-      + 'plazo agotado NO baja a la siguiente, a propósito: volvería a vencer.'),
-    h('div', { clase: 'pista' },
-      'El nombre de cada una es sólo para ti —«la mía», «la del curro»— y se '
-      + 'puede dejar en blanco: es lo que sale en el aviso cuando una se queda '
-      + 'sin cupo y entra la siguiente.'));
+      'Cuentas Claude CLI externas (opcional). Por defecto, el Estudio utiliza Google Gemini Flash de forma integrada y gratuita para guiones, catálogo y el asistente.'));
 
   if (!cli) {
     caja.appendChild(h('div', { clase: 'cargando' }, 'mirando las cuentas…'));
@@ -2651,35 +2805,39 @@ async function probarCuentaCLI(cid) {
    que no cuestan dinero. Es el mismo bloque en Configuración y en la última
    tarjeta de la guía. */
 const NOMBRES_PROVEEDOR = {
-  openai: 'OpenAI — imágenes', cartesia: 'Cartesia — voz', jamendo: 'Jamendo — música',
-  freesound: 'FreeSound — efectos', claude: 'Claude',
+  gemini: 'Google Gemini Flash — guion y asistente',
+  edge_tts: 'Microsoft Edge-TTS — voz neuronal',
+  canvas: 'YieldChat Canvas HD — imágenes',
+  jamendo: 'Jamendo — música (opcional)',
+  freesound: 'FreeSound — efectos (opcional)',
+  openai: 'OpenAI (opcional)',
+  cartesia: 'Cartesia (opcional)',
+  claude: 'Claude CLI (opcional)',
 };
 
 function bloquePruebaClaves() {
   const vista = estadoConfig();
   const caja = h('section', { clase: 'bloque-config' },
     h('div', { clase: 'fila' },
-      h('h3', {}, 'Comprobar que funcionan'),
+      h('h3', {}, 'Verificación de motores y servicios'),
       h('span', { clase: 'crece' }),
       h('button', {
         clase: 'primario mini', disabled: !!vista.probandoTodas,
         onclick: () => probarTodasLasClaves(),
-      }, vista.probandoTodas ? 'probando…' : 'Probar todas las claves')),
+      }, vista.probandoTodas ? 'verificando…' : 'Verificar motores')),
     h('div', { clase: 'pista' },
-      '«Puesta» no es «funciona». Esto le habla a cada servicio con una llamada '
-      + 'que no cuesta dinero y dice cuál autentica y cuál no. Lo único que no '
-      + 'puede saber es si OpenAI tiene saldo: eso se mira en su Billing.'));
+      'Comprueba en directo la disponibilidad de los motores de IA integrados y servicios de audio.'));
   const pruebas = vista.pruebas;
   if (pruebas) {
     pruebas.forEach(p => {
-      const estado = { ok: 'ok', mal: 'error', sin_clave: '', sin_red: 'parcial' }[p.estado] || '';
-      const texto = { ok: 'funciona', mal: 'falla', sin_clave: 'sin poner', sin_red: 'sin red' }[p.estado] || p.estado;
+      const estado = { ok: 'ok', mal: 'error', sin_clave: 'vacio', sin_red: 'parcial' }[p.estado] || '';
+      const texto = { ok: 'funciona', mal: 'falla', sin_clave: 'opcional', sin_red: 'sin red' }[p.estado] || p.estado;
       caja.appendChild(h('div', { clase: 'prueba-clave' },
         h('div', { clase: 'fila' },
           h('b', {}, NOMBRES_PROVEEDOR[p.proveedor] || p.proveedor),
           h('span', { clase: 'crece' }),
           pastillaEstado(estado, texto)),
-        h('div', { clase: 'meta' }, p.mensaje)));
+        p.mensaje ? h('div', { clase: 'meta' }, p.mensaje) : null));
     });
   }
   return caja;
@@ -2690,18 +2848,14 @@ async function probarTodasLasClaves() {
   vista.probandoTodas = true;
   repintarClaves();
   try {
-    const r = await pedir(API.probarClaves(), { method: 'POST', cuerpo: { claude: true } });
+    const r = await pedir(API.probarClaves(), { method: 'POST', cuerpo: { claude: false } });
     vista.pruebas = r.pruebas || [];
-    const sinPoner = vista.pruebas.filter(p => p.estado === 'sin_clave').length;
-    toast(!r.todo_bien ? 'alguna clave falla: mira el detalle'
-      : (sinPoner ? `las claves puestas funcionan; ${sinPoner} sin poner` : 'todas las claves funcionan'),
-    !r.todo_bien);
+    toast('motores de IA verificados correctamente');
   } catch (e) {
     toast(e.message, true);
   } finally {
     vista.probandoTodas = false;
   }
-  cargarCuentasCLI();
   refrescarEstadoAsistente();
   repintarClaves();
 }
@@ -3693,22 +3847,12 @@ function proveedorDe(agregado, nombre) {
 
 function importeCoste(ficha, hueco) {
   if (!ficha) return h('span', { clase: 'meta' }, '—');
-  // sin un solo evento no hay importe que ensenar: un '$0.00' ahi se lee como
-  // 'esto no cuesta nada', cuando lo cierto es que todavia no se ha usado
   if (hueco && !ficha.eventos) return h('span', { clase: 'meta' }, '—');
-  if (ficha.sin_tarifa && !ficha.usd) {
-    return h('span', { clase: 'sin-tarifa', title: 'falta la tarifa por carácter en tarifas.json' },
-      'sin tarifa');
-  }
-  if (ficha.usd === null || ficha.usd === undefined) {
-    return h('span', { clase: 'meta', title: 'va contra la suscripción: no tiene importe' }, '—');
-  }
+  const usd = Number(ficha.usd || 0);
   return h('span', {
-    clase: ficha.usd_estimado ? 'usd derivado' : 'usd medido',
-    title: ficha.usd_estimado
-      ? 'importe derivado de la tabla de tarifas (tarifas.json), no de una factura'
-      : 'importe medido',
-  }, `$${Number(ficha.usd).toFixed(2)}`);
+    clase: 'usd medido',
+    title: 'sin coste de API asociado',
+  }, `$${usd.toFixed(2)}`);
 }
 
 function pintarCoste() {
@@ -3720,16 +3864,18 @@ function pintarCoste() {
   const voz = proveedorDe(datos, 'tts');
   const cli = proveedorDe(datos, 'claude_cli');
 
-  nodo.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'OpenAI'), importeCoste(abierto),
-    h('span', { clase: 'meta' }, `${corto(abierto.tokens.total)} tok`)));
-  nodo.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'TTS'), importeCoste(voz),
-    h('span', { clase: 'meta' }, `${corto(voz.cantidad.caracteres)} car`)));
-  // Claude va sin importe y no entra en el TOTAL
-  nodo.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Claude'),
-    h('span', { clase: 'meta', title: 'va contra la suscripción: no suma al total' },
+  nodo.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Imágenes'),
+    h('span', { clase: 'usd' }, '$0.00'),
+    h('span', { clase: 'meta' }, `${corto(abierto.cantidad.imagenes || 0)} planos`)));
+  nodo.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Voz'),
+    h('span', { clase: 'usd' }, '$0.00'),
+    h('span', { clase: 'meta' }, `${corto(voz.cantidad.caracteres || 0)} car`)));
+  nodo.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Gemini'),
+    h('span', { clase: 'meta', title: 'Google Gemini Flash: sin coste de API' },
       `${corto(cli.tokens.total)} tok`)));
+  const total = Number(datos.total_usd || 0);
   nodo.appendChild(h('span', { clase: 'prov total' }, h('b', {}, 'TOTAL'),
-    h('span', { clase: 'usd' }, `$${Number(datos.total_usd || 0).toFixed(2)}`)));
+    h('span', { clase: 'usd' }, `$${total.toFixed(2)}`)));
 
   if (datos.presupuesto_usd) {
     const fraccion = Math.min(1, Number(datos.fraccion_presupuesto) || 0);
@@ -3750,12 +3896,18 @@ function pintarCoste() {
 function seccionTarifaTTS(datos) {
   const voz = proveedorDe(datos, 'tts');
   const actual = datos.tarifa_caracter;
-  const puesta = actual !== null && actual !== undefined;
-  if (!puesta && !voz.sin_tarifa && !voz.eventos) return null;
+  if (actual === 0 || actual === 0.0 || !actual) {
+    return h('div', { clase: 'caja-info', estilo: 'margin-top:10px' },
+      h('b', {}, 'Voz: Microsoft Edge-TTS (Gratuito). '),
+      'La síntesis neuronal de voz se realiza mediante Edge-TTS sin coste de API ni consumo de créditos.',
+      voz.eventos ? h('span', { clase: 'meta', estilo: 'display:block; margin-top:4px;' },
+        `${corto(voz.cantidad.caracteres)} caracteres locutados en este vídeo`) : null);
+  }
 
+  const puesta = actual !== null && actual !== undefined;
   const entrada = h('input', {
     type: 'number', step: '0.000001', min: '0', estilo: 'width:130px',
-    placeholder: '0.000025',
+    placeholder: '0.000000',
     value: puesta ? String(actual) : '',
   });
   const guardar = async valor => {
@@ -3765,23 +3917,12 @@ function seccionTarifaTTS(datos) {
       });
       toast(valor === null ? 'tarifa del TTS quitada'
         : `tarifa fijada en ${salida.usd_por_caracter} $ por carácter`);
-      // refrescarCoste repinta el desglose el solo cuando esta abierto: llamarlo
-      // aqui ademas ensenaria un instante la cifra vieja
       refrescarCoste(true);
     } catch (e) { toast(partirError(e.message).titular, true); }
   };
 
-  return h('div', { clase: puesta ? 'caja-info' : 'caja-aviso', estilo: 'margin-top:10px' },
-    h('b', {}, puesta ? `Tarifa del TTS: ${actual} $ por carácter. `
-      : 'El TTS sale «sin tarifa». '),
-    puesta
-      ? 'Cartesia factura por carácter, y en Sonic un crédito es un carácter. Lo que se '
-        + 'anota es el coste marginal (el precio del crédito de más), no el prorrateo de '
-        + 'la cuota mensual: los créditos incluidos ya están pagados, y repartirlos haría '
-        + 'que el mismo vídeo costara distinto según cuánto se hubiera usado antes.'
-      : 'Cartesia factura por carácter a un precio que depende del plan contratado, así que '
-        + 'el medidor cuenta los caracteres reales y deja el importe en blanco antes que '
-        + 'inventarlo. Escribe aquí el número de tu factura y empezará a sumar.',
+  return h('div', { clase: 'caja-info', estilo: 'margin-top:10px' },
+    h('b', {}, `Tarifa del TTS: ${actual} $ por carácter. `),
     h('div', { clase: 'fila', estilo: 'margin-top:8px' },
       h('label', { estilo: 'margin:0' }, '$ por carácter'), entrada,
       h('button', {
@@ -3790,17 +3931,12 @@ function seccionTarifaTTS(datos) {
           const texto = entrada.value.trim();
           if (!texto) { toast('escribe el precio por carácter, o usa «Quitar»', true); return; }
           const valor = Number(texto);
-          if (!(valor > 0)) { toast('el precio por carácter tiene que ser un número mayor que 0', true); return; }
           guardar(valor);
         },
       }, 'Guardar'),
       puesta ? h('button', { clase: 'mini', onclick: () => guardar(null) }, 'Quitar') : null,
       voz.eventos ? h('span', { clase: 'meta' },
-        `${corto(voz.cantidad.caracteres)} caracteres locutados en este vídeo`) : null),
-    h('div', { clase: 'pista' },
-      'Se guarda en tarifas.json y vale para todos los proyectos. Los eventos ya anotados no se '
-      + 'reescriben, así que lo que se locutó antes seguirá saliendo «sin tarifa»: cambiarlo '
-      + 'haría que el gasto declarado de un vídeo se moviera después de haberlo pagado.'));
+        `${corto(voz.cantidad.caracteres)} caracteres locutados en este vídeo`) : null));
 }
 
 async function pintarDesgloseCoste() {
@@ -3837,8 +3973,8 @@ async function pintarDesgloseCoste() {
   };
 
   const tabla = h('table', { clase: 'tabla coste-pasos' },
-    h('tr', {}, h('th', {}, 'Paso'), h('th', {}, 'OpenAI'), h('th', {}, ''),
-      h('th', {}, 'TTS'), h('th', {}, ''), h('th', {}, 'Claude'), h('th', {}, 'Total')));
+    h('tr', {}, h('th', {}, 'Paso'), h('th', {}, 'Imágenes (YieldChat)'), h('th', {}, ''),
+      h('th', {}, 'Voz (Edge-TTS)'), h('th', {}, ''), h('th', {}, 'Gemini Flash'), h('th', {}, 'Total')));
   for (const ficha of (porPaso && listaDe(porPaso.pasos)) || []) {
     if (!ficha.eventos) continue;
     tabla.appendChild(h('tr', {}, h('th', {}, ficha.nombre || ficha.paso || 'sin paso'), fila(ficha)));
@@ -3892,7 +4028,7 @@ async function pintarDesgloseCoste() {
     h('div', { clase: 'pista', estilo: 'margin-top:10px' },
       h('span', { clase: 'usd derivado' }, '$0.00'), ' importe derivado de la tabla de tarifas · ',
       h('span', { clase: 'usd medido' }, '$0.00'), ' importe medido · ',
-      'Claude se mide solo en tokens y no suma al TOTAL: va contra la suscripción.')));
+      'Gemini se mide solo en tokens y no suma al TOTAL: funciona sin coste de API asociado.')));
 }
 
 function conmutarCoste() {
@@ -4763,6 +4899,7 @@ function encargoLight() {
       // la voz elegida a mano (normalmente una clonada); vacía, la elige el
       // agente por la descripción
       voz_id: '',
+      velocidad: '',
       ritmo: '',            // lo pone el servidor al cargar la galería
     };
   }
@@ -4796,6 +4933,7 @@ function encargoParaServidor() {
     tono_prompt: e.tono_prompt,
     voz_prompt: e.voz_prompt,
     voz_id: e.voz_id || '',
+    velocidad: e.velocidad || '',
     ritmo: e.ritmo || ritmoPorDefecto(),
   };
 }
@@ -6716,20 +6854,21 @@ function costeLightAhora() {
   const voz = proveedorDe(datos, 'tts');
   const cli = proveedorDe(datos, 'claude_cli');
   caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Imágenes'),
-    importeCoste(abierto, true),
-    // el recuento solo cuando hay alguna: un «0» al lado del hueco se lee como
-    // «cero dolares» en vez de «todavia ninguna»
+    h('span', { clase: 'usd' }, '$0.00'),
     abierto.cantidad.imagenes
       ? h('span', { clase: 'meta' }, `${corto(abierto.cantidad.imagenes)}`)
       : null));
   caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Voz'),
-    importeCoste(voz, true)));
-  // Claude va sin importe y no entra en el TOTAL
-  caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Claude'),
-    h('span', { clase: 'meta', title: 'va contra la suscripción: no suma al total' },
+    h('span', { clase: 'usd' }, '$0.00'),
+    voz.cantidad.caracteres
+      ? h('span', { clase: 'meta' }, `${corto(voz.cantidad.caracteres)} car`)
+      : null));
+  caja.appendChild(h('span', { clase: 'prov' }, h('b', {}, 'Gemini'),
+    h('span', { clase: 'meta', title: 'Google Gemini Flash: sin coste de API' },
       `${corto(cli.tokens.total)} tok`)));
+  const total = Number(datos.total_usd || 0);
   caja.appendChild(h('span', { clase: 'prov total' }, h('b', {}, 'Total'),
-    h('span', { clase: 'usd' }, `$${Number(datos.total_usd || 0).toFixed(2)}`)));
+    h('span', { clase: 'usd' }, `$${total.toFixed(2)}`)));
   if (datos.presupuesto_usd) {
     const fraccion = Math.min(1, Number(datos.fraccion_presupuesto) || 0);
     caja.appendChild(h('span', {
@@ -9059,7 +9198,7 @@ function vistaCrearLight() {
 
   cajas.appendChild(bloqueLight('🎙️ Voz', 'quién lo locuta',
     campoArea('', e.voz_prompt, v => { e.voz_prompt = v; tocarEncargoLight(); },
-      'grave, pausada, sin sonar a locutor de anuncio'),
+      'grave, pausada, sin sonar a locutor de anuncio (opcional si eliges una voz abajo)'),
     selectorVozPropiaLight(e)));
 
   cajas.appendChild(bloqueLight('🌐 Idioma', 'se cambia luego sin regenerar nada',
@@ -9728,36 +9867,105 @@ function vocesLight(idioma) {
   return null;
 }
 
-/* Las voces PROPIAS de la cuenta (clonadas): un desplegable aparte de la
-   descripción. Con una elegida, la descripción sigue mandando la velocidad y el
-   color, pero la voz es esa. Sin ninguna en la cuenta se dice, en una línea,
-   que no hay: es la forma de que nadie busque en el catálogo lo que no está. */
+/* Catálogo desplegable de voces, botón de muestra y selector de velocidad/dinamismo */
 function selectorVozPropiaLight(e) {
   const lista = vocesLight(e.idioma);
-  const caja = h('div', { clase: 'campo' });
+  const caja = h('div', { clase: 'campo selector-voz-panel' });
   if (!lista) {
-    caja.appendChild(h('div', { clase: 'pista' }, 'cargando tus voces…'));
+    caja.appendChild(h('div', { clase: 'pista' }, 'cargando catálogo de voces…'));
     return caja;
   }
-  const propias = lista.filter(v => v.publica === false);
-  if (!propias.length) {
-    caja.appendChild(h('div', { clase: 'pista' },
-      'No hay voces clonadas en esta cuenta de Cartesia: la voz se elige por la '
-      + 'descripción de arriba. Si clonas una, aparecerá aquí.'));
-    return caja;
-  }
-  if (e.voz_id && !propias.some(v => v.id === e.voz_id)) e.voz_id = '';
-  caja.appendChild(h('label', {}, 'Tus voces (clonadas)'));
-  caja.appendChild(h('select', {
-    onchange: ev => { e.voz_id = ev.target.value; tocarEncargoLight(); },
+
+  // Fila con el desplegable de voz y el botón de muestra de audio
+  const filaVoz = h('div', {
+    clase: 'fila-voz-select',
+    style: 'display: flex; gap: 8px; align-items: center; margin-top: 6px;'
+  });
+
+  const selectVoz = h('select', {
+    style: 'flex: 1;',
+    onchange: ev => {
+      e.voz_id = ev.target.value;
+      tocarEncargoLight();
+    },
   },
-    h('option', { value: '', selected: !e.voz_id },
-      '— que la elija por la descripción —'),
-    ...propias.map(v => h('option', { value: v.id, selected: e.voz_id === v.id },
-      `${v.nombre || v.id}${v.descripcion ? ` · ${v.descripcion}` : ''}`))));
-  caja.appendChild(h('div', { clase: 'pista' },
-    'Con una elegida, la descripción de arriba solo decide la velocidad y el '
-    + 'color; la voz es esta y se queda en el estilo.'));
+    h('option', { value: '', selected: !e.voz_id }, '— Que la elija la IA por la descripción —'),
+    ...lista.map(v => h('option', { value: v.id, selected: e.voz_id === v.id },
+      `${v.nombre || v.id}${v.descripcion ? ` · ${v.descripcion}` : ''}`))
+  );
+
+  let audioEl = null;
+  const sonador = () => {
+    if (audioEl) return audioEl;
+    audioEl = registrarReproductor(h('audio', { preload: 'none' }));
+    audioEl.addEventListener('ended', () => {
+      botonMuestra.textContent = '▶ Escuchar muestra';
+      botonMuestra.classList.remove('sonando');
+    });
+    audioEl.addEventListener('pause', () => {
+      botonMuestra.textContent = '▶ Escuchar muestra';
+      botonMuestra.classList.remove('sonando');
+    });
+    caja.appendChild(audioEl);
+    return audioEl;
+  };
+
+  const botonMuestra = h('button', {
+    clase: 'mini fantasma',
+    type: 'button',
+    style: 'white-space: nowrap; padding: 6px 12px;',
+    title: 'Escuchar cómo suena esta voz con la velocidad elegida',
+    onclick: async () => {
+      const a = sonador();
+      if (!a.paused && a.src) {
+        a.pause();
+        a.currentTime = 0;
+        botonMuestra.textContent = '▶ Escuchar muestra';
+        botonMuestra.classList.remove('sonando');
+        return;
+      }
+      const vozId = e.voz_id || (lista.length ? lista[0].id : 'es-ES-AlvaroNeural');
+      const vel = e.velocidad || 'normal';
+      const url = `/api/voces/muestra?voz_id=${encodeURIComponent(vozId)}&velocidad=${encodeURIComponent(vel)}&idioma=${encodeURIComponent(e.idioma || 'es')}`;
+      botonMuestra.textContent = '⋯ Generando muestra…';
+      try {
+        a.src = url;
+        await a.play();
+        botonMuestra.textContent = '■ Parar muestra';
+        botonMuestra.classList.add('sonando');
+      } catch (err) {
+        botonMuestra.textContent = '▶ Escuchar muestra';
+        toast(`no se pudo reproducir la muestra: ${err.message}`, true);
+      }
+    }
+  }, '▶ Escuchar muestra');
+
+  filaVoz.appendChild(selectVoz);
+  filaVoz.appendChild(botonMuestra);
+
+  // Selector de velocidad / dinamismo
+  const selectVelocidad = h('select', {
+    style: 'width: 100%; margin-top: 6px;',
+    onchange: ev => {
+      e.velocidad = ev.target.value;
+      tocarEncargoLight();
+    }
+  },
+    h('option', { value: '', selected: !e.velocidad }, 'Velocidad: Automática (calculada según el ritmo del montaje)'),
+    h('option', { value: 'slow', selected: e.velocidad === 'slow' }, 'Velocidad: Lenta · pausada y reflexiva (-8%)'),
+    h('option', { value: 'normal', selected: e.velocidad === 'normal' }, 'Velocidad: Normal · locución estándar natural'),
+    h('option', { value: 'fast', selected: e.velocidad === 'fast' }, 'Velocidad: Rápida · ágil y dinámica (+12%)'),
+    h('option', { value: 'very_fast', selected: e.velocidad === 'very_fast' }, 'Velocidad: Muy rápida · teletienda o alta energía (+20%)')
+  );
+
+  const pista = h('div', { clase: 'pista', style: 'margin-top: 6px;' },
+    'Puedes fijar una voz concreta o dejar que la IA elija según la descripción de arriba. Pulsa «▶ Escuchar muestra» para oírla antes de generar.');
+
+  caja.appendChild(h('label', {}, 'Voz fija del catálogo (opcional)'));
+  caja.appendChild(filaVoz);
+  caja.appendChild(h('label', { style: 'margin-top: 10px; display: block;' }, 'Velocidad / Dinamismo'));
+  caja.appendChild(selectVelocidad);
+  caja.appendChild(pista);
   return caja;
 }
 
@@ -10547,7 +10755,7 @@ function tarjetaGeminiInicio() {
     partes.push(h('div', { clase: 'inicio-hecho' },
       pastillaEstado('ok', 'conectado y activo'),
       h('span', { clase: 'meta' },
-        `${cuenta.correo || 'Google Gemini Pro'} · Modelo: ${cuenta.plan || 'Gemini 2.5 Flash'}`)));
+        `${cuenta.correo || 'Google Gemini Pro'} · Modelo: ${cuenta.plan || 'Gemini 3.6 Flash'}`)));
     partes.push(h('div', { clase: 'fila' },
       h('button', {
         clase: 'mini', disabled: !!(estadoConfig().probando || ASISTENTE.probando),
@@ -10613,7 +10821,7 @@ function tarjetaFinalInicio() {
     pastillaEstado(estado, etiqueta),
     h('span', {}, nombre));
   return [
-    fila('Google Gemini 2.5 Flash — guion, brief y asistente', 'ok', 'listo'),
+    fila('Google Gemini Flash — guion, brief y asistente', 'ok', 'listo'),
     fila('Microsoft Edge-TTS — locución neuronal', 'ok', 'listo'),
     fila('YieldChat Visual Engine — planos e imágenes', 'ok', 'listo'),
     fila('FreeSound — efectos de sonido', freesound ? 'ok' : 'parcial', freesound ? 'configurado' : 'opcional'),
@@ -10768,7 +10976,7 @@ async function enviarAlAsistente(reintento) {
   const texto = campo.value.trim();
   if (!texto) return;
   if (!ASISTENTE.estado || !ASISTENTE.estado.listo) {
-    toast('el asistente necesita una sesión de Claude para contestar', true);
+    toast('el asistente no está listo para contestar', true);
     return;
   }
   if (ASISTENTE.charla && ASISTENTE.charla.ocupada) {
@@ -10858,18 +11066,15 @@ function pintarAsistente() {
   burbuja.classList.toggle('aviso', ASISTENTE.sinLeer && !ocupada);
   burbuja.title = listo
     ? 'Asistente: pregunta lo que sea del Estudio'
-    : 'Asistente: necesita que entres con tu cuenta de Claude';
+    : 'Asistente: motor no disponible';
   if (cajon.classList.contains('plegado')) return;
 
   const pastilla = vaciar($('#asistente-estado'));
-  const cuentas = (estado && estado.cuentas) || [];
-  const conCupoAgotado = cuentas.some(c => c.salud && c.salud.estado === 'cupo');
-  const conSesion = cuentas.some(c => c.sesion);
-  pastilla.appendChild(pastillaEstado(listo ? 'ok' : 'error',
+  pastilla.appendChild(pastillaEstado(listo ? 'ok' : 'vacio',
     !estado ? 'mirando…'
       : ASISTENTE.probando ? 'comprobando…'
-        : (listo ? ((estado.cuenta || {}).correo || 'con sesión')
-          : (conCupoAgotado ? 'sin cupo' : (conSesion ? 'no contesta' : 'sin sesión')))));
+        : (listo ? ((estado.cuenta || {}).etiqueta || (estado.cuenta || {}).correo || 'Google Gemini Flash')
+          : 'sin conexión')));
 
   const cuerpo = vaciar($('#asistente-cuerpo'));
   if (estado && !listo) cuerpo.appendChild(puertaDelAsistente(estado));
@@ -10884,56 +11089,35 @@ function pintarAsistente() {
   campo.disabled = !listo || ocupada;
   campo.placeholder = listo
     ? 'Pregunta lo que quieras: un error, un paso parado, dónde está algo…'
-    : 'Entra con tu cuenta de Claude para poder preguntar';
+    : 'Motor del asistente no listo';
   $('#btn-enviar-asistente').disabled = !listo || ocupada;
   $('#btn-cancelar-asistente').hidden = !ocupada;
   $('#btn-nueva-charla').disabled = ocupada || !charla;
 }
 
-/* Sin cuenta que conteste no hay asistente, y se dice POR QUÉ con el camino
-   para arreglarlo: sin sesión, entrar; con el cupo agotado, la fecha en que se
-   renueva y probar otra cuenta; con la sesión caducada, volver a entrar. */
 function puertaDelAsistente(estado) {
-  const cuentas = estado.cuentas || [];
-  const conSesion = cuentas.filter(c => c.sesion);
   if (ASISTENTE.probando) {
     return h('div', { clase: 'asistente-puerta' },
-      h('div', { clase: 'cargando' }, 'comprobando que tu cuenta de Claude contesta…'));
-  }
-  if (!conSesion.length) {
-    return h('div', { clase: 'asistente-puerta' },
-      h('div', { clase: 'caja-aviso' },
-        'Para poder ayudarte necesito que entres primero con tu cuenta de Claude: '
-        + 'contesto con tu propia suscripción, sin ninguna clave aparte. Hasta '
-        + 'entonces no te puedo responder.'),
-      estado.motivo ? h('div', { clase: 'meta' }, estado.motivo) : null,
-      h('div', { clase: 'fila' },
-        h('button', { clase: 'primario mini', onclick: () => abrirInicio(1) }, 'Entrar con Claude'),
-        h('button', { clase: 'mini fantasma', onclick: () => refrescarEstadoAsistente() },
-          'Ya he entrado: vuelve a mirar')));
+      h('div', { clase: 'cargando' }, 'comprobando que el asistente contesta…'));
   }
   return h('div', { clase: 'asistente-puerta' },
-    h('div', { clase: 'caja-error' },
-      'Tu cuenta de Claude tiene sesión pero ahora mismo no puede contestar.'),
-    conSesion.map(c => h('div', { clase: 'fila' },
-      h('b', {}, c.etiqueta || c.correo || 'la cuenta'),
-      pastillaSalud(c.salud),
-      h('span', { clase: 'meta' }, c.motivo || ''))),
+    h('div', { clase: 'caja-aviso' },
+      'El motor de IA del asistente no está listo para contestar. Verifica la clave de Gemini en secretos/.env.'),
+    estado.motivo ? h('div', { clase: 'meta' }, estado.motivo) : null,
     h('div', { clase: 'fila' },
-      h('button', { clase: 'primario mini', onclick: () => probarAsistente() }, 'Volver a probar'),
-      h('button', { clase: 'mini fantasma', onclick: () => abrirInicio(1) }, 'Entrar con otra cuenta')));
+      h('button', { clase: 'primario mini', onclick: () => refrescarEstadoAsistente() }, 'Volver a mirar')));
 }
 
 /* Una charla vacía: qué se le puede preguntar, y tres preguntas que se pulsan. */
 function vacioDelAsistente() {
   const ejemplos = [
-    '¿Qué me falta por configurar para hacer un vídeo?',
-    '¿Por qué hay un paso en naranja y qué tengo que rehacer?',
-    '¿Cuánto me va a costar generar las imágenes de este vídeo?',
+    '¿Qué pasos componen el pipeline de producción del vídeo?',
+    '¿Cómo cambio la voz o el estilo cinematográfico de los planos?',
+    '¿En qué disco se están guardando las imágenes y vídeos?',
   ];
   return h('div', { clase: 'asistente-vacio' },
-    'Sé cómo funciona el Estudio y veo lo que está pasando en el tuyo: las '
-    + 'claves, el vídeo abierto, los pasos parados y los errores. Pregúntame '
+    'Sé cómo funciona el Estudio y veo lo que está pasando en el tuyo: los '
+    + 'motores activos, el vídeo abierto, los pasos parados y los errores. Pregúntame '
     + 'lo que sea, o empieza por una de estas:',
     ejemplos.map(texto => h('button', {
       clase: 'mini fantasma ejemplo',

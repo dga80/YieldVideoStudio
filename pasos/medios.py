@@ -57,8 +57,14 @@ if os.name == "nt":
 EDGES = tuple(f for f in (os.environ.get("ESTUDIO_EDGE"),) if f) + (
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
     "/usr/bin/microsoft-edge",
     "/opt/microsoft/msedge/msedge",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
     "/usr/bin/chromium",
 )
 
@@ -1602,11 +1608,21 @@ def reubicar_todas(rutas):
     return [reubicar(r) for r in (rutas or [])]
 
 
+def ruta_a_url(ruta):
+    """Convierte una ruta de fichero absoluta a file:/// URL válida según la plataforma."""
+    limpia = os.path.abspath(ruta).replace("\\", "/")
+    return "file://" + limpia if limpia.startswith("/") else "file:///" + limpia
+
+
 def edge():
     for ruta in EDGES:
-        if os.path.exists(ruta):
+        if ruta and os.path.exists(ruta):
             return ruta
-    raise RuntimeError("no se encuentra msedge.exe")
+    for nombre in ("msedge", "google-chrome", "chromium", "chrome"):
+        ruta = shutil.which(nombre)
+        if ruta:
+            return ruta
+    raise RuntimeError("no se encuentra un navegador Chromium (Edge, Chrome) para rasterizar")
 
 
 def ffmpeg():
@@ -1716,24 +1732,27 @@ def rasterizar(svg, destino, ancho, alto, transparente=True, espera_ms=1800):
     # distingue "esto no se puede pintar" de "esta vez no salio".
     ultimo = ""
     for intento in range(1, INTENTOS_RASTERIZAR + 1):
-        perfil = tempfile.mkdtemp(prefix="edge_ras_")
+        perfil = tempfile.mkdtemp(prefix="edge_ras_") if os.name == "nt" else None
         orden = [edge(), "--headless", "--disable-gpu", "--no-first-run",
                  "--disable-extensions", "--hide-scrollbars",
-                 f"--user-data-dir={perfil}",
+                 "--allow-file-access-from-files",
                  f"--screenshot={destino}",
                  f"--window-size={int(ancho)},{int(alto)}",
                  f"--virtual-time-budget={int(espera_ms)}"]
+        if perfil:
+            orden.append(f"--user-data-dir={perfil}")
         if transparente:
             orden.append("--default-background-color=00000000")
-        orden.append("file:///" + ruta_svg.replace("\\", "/"))
+        orden.append(ruta_a_url(ruta_svg))
         try:
             hecho = subprocess.run(orden, capture_output=True, timeout=180,
                                    **SIN_VENTANA)
             ultimo = (hecho.stderr or b"").decode("utf-8", "replace")[-300:]
         except subprocess.TimeoutExpired:
-            ultimo = "Edge no contesto en 180 s"
+            ultimo = "Navegador no contesto en 180 s"
         finally:
-            shutil.rmtree(perfil, ignore_errors=True)
+            if perfil:
+                shutil.rmtree(perfil, ignore_errors=True)
         if os.path.exists(destino):
             break
         if intento < INTENTOS_RASTERIZAR:

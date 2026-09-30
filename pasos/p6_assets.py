@@ -4421,8 +4421,15 @@ def ejecutar(proyecto, params, avisar=None, unidades=None, solo_assets=False,
         # que sus prompts salieron identicos y la cache devolvio el mismo fichero.
         # En el modo explicito 'adoptar' es lo esperado, porque se esta repartiendo
         # un fondo de arte limitado entre mas planos de los que hay.
-        if p["motor_imagen"] == "adoptar":
-            avisar(None, f"AVISO: planos con la misma imagen adoptada: {detalle}")
+        motor_img = medios.motor("imagen_openai/imagen.py")
+        sin_openai = not getattr(motor_img, "_claves_declaradas", lambda: True)()
+        es_fallback = (
+            sin_openai
+            or any(str(f.get("modelo") or "").startswith("yield") for f in resultados.values())
+            or any("yield" in str(f.get("fuente") or "") for f in resultados.values())
+        )
+        if p["motor_imagen"] == "adoptar" or es_fallback:
+            avisar(None, f"AVISO: planos con imagen en modo fallback o adoptada: {detalle}")
             plan.setdefault("informe", {})["planos_repetidos"] = repetidos
         else:
             raise RuntimeError(

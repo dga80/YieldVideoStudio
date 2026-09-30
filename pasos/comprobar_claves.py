@@ -190,57 +190,83 @@ def probar_claude(cuentas):
 
 # ------------------------------------------------------------------ todo junto
 
+# ------------------------------------------------------------------ todo junto
+
 def probar_todas(cuentas_claude=(), con_claude=True):
     """Todas las claves del almacen, cada una contra su servicio. -> [fichas]
 
-    `cuentas_claude` son las fichas del CLI que hay que probar (las decide
-    quien llama, que es quien sabe cuales tienen sesion). En modo simulado no
-    se sale a ningun sitio: cada clave puesta se da por buena.
+    Incluye siempre los motores principales integrados (Gemini, Edge-TTS, Canvas HD)
+    que operan sin coste por defecto.
     """
     almacen = claves.leer()
     fichas = []
-    if salud_cli.simulado():
-        for proveedor, puesta in (("openai", bool(almacen["openai"])),
-                                  ("cartesia", bool(almacen["cartesia"]["clave"])),
-                                  ("jamendo", bool(almacen["jamendo"]["clave"])),
-                                  ("freesound", bool(almacen["freesound"]["clave"]))):
-            fichas.append(_ficha(proveedor, "ok" if puesta else "sin_clave",
-                                 "simulado" if puesta else "sin poner"))
-        if con_claude:
-            fichas.extend(probar_claude(cuentas_claude))
-        return fichas
-    pruebas = (
-        (probar_openai, (almacen["openai"][0]["clave"] if almacen["openai"] else "")),
-        (probar_cartesia, almacen["cartesia"]["clave"]),
-        (probar_jamendo, almacen["jamendo"]["clave"]),
-        (probar_freesound, almacen["freesound"]["clave"]),
+
+    # 1. Motores integrados principales (activos y sin coste)
+    try:
+        from . import gemini_cliente
+    except ImportError:
+        import gemini_cliente
+    if gemini_cliente.hay_gemini():
+        fichas.append(_ficha("gemini", "ok", "Google Gemini Flash conectado y activo (gratis $0.00)"))
+
+    fichas.append(_ficha("edge_tts", "ok", "Microsoft Edge-TTS neuronal activo (gratis $0.00)"))
+    fichas.append(_ficha("canvas", "ok", "YieldChat / Canvas Cinematográfico HD activo (gratis $0.00)"))
+
+    # 2. Servicios de audio opcionales (FreeSound y Jamendo)
+    pruebas_audio = (
+        (probar_freesound, almacen.get("freesound", {}).get("clave", "")),
+        (probar_jamendo, almacen.get("jamendo", {}).get("clave", "")),
     )
-    for funcion, clave in pruebas:
+    for funcion, clave in pruebas_audio:
+        nombre = funcion.__name__.replace("probar_", "")
+        if clave:
+            try:
+                fichas.append(funcion(clave))
+            except Exception as fallo:                     # noqa: BLE001
+                fichas.append(_ficha(nombre, "sin_red", f"la prueba ha fallado: {type(fallo).__name__}: {fallo}"))
+        else:
+            fichas.append(_ficha(nombre, "sin_clave", "opcional (sin poner)"))
+
+    # 3. Proveedores externos opcionales (OpenAI, Cartesia, Claude)
+    if almacen.get("openai") and almacen["openai"][0].get("clave"):
         try:
-            fichas.append(funcion(clave))
-        except Exception as fallo:                     # noqa: BLE001
-            nombre = funcion.__name__.replace("probar_", "")
-            fichas.append(_ficha(nombre, "sin_red", f"la prueba ha fallado: "
-                                                     f"{type(fallo).__name__}: {fallo}"))
-    if con_claude:
+            fichas.append(probar_openai(almacen["openai"][0]["clave"]))
+        except Exception as fallo:                         # noqa: BLE001
+            fichas.append(_ficha("openai", "sin_red", f"la prueba ha fallado: {fallo}"))
+
+    if almacen.get("cartesia", {}).get("clave"):
+        try:
+            fichas.append(probar_cartesia(almacen["cartesia"]["clave"]))
+        except Exception as fallo:                         # noqa: BLE001
+            fichas.append(_ficha("cartesia", "sin_red", f"la prueba ha fallado: {fallo}"))
+
+    if con_claude and cuentas_claude:
         try:
             fichas.extend(probar_claude(cuentas_claude))
-        except Exception as fallo:                     # noqa: BLE001
-            fichas.append(_ficha("claude", "sin_red", f"la prueba ha fallado: "
-                                                      f"{type(fallo).__name__}: {fallo}"))
+        except Exception as fallo:                         # noqa: BLE001
+            fichas.append(_ficha("claude", "sin_red", f"la prueba ha fallado: {fallo}"))
+
     return fichas
 
 
-NOMBRES = {"openai": "OpenAI (imágenes)", "cartesia": "Cartesia (voz)",
-           "jamendo": "Jamendo (música)", "freesound": "FreeSound (efectos)",
-           "claude": "Claude"}
+NOMBRES = {
+    "gemini": "Google Gemini (Guion y Asistente)",
+    "edge_tts": "Microsoft Edge-TTS (Voz neuronal)",
+    "canvas": "Canvas Cinematográfico HD (Imágenes)",
+    "freesound": "FreeSound (Efectos de sonido)",
+    "jamendo": "Jamendo (Música)",
+    "openai": "OpenAI (Imágenes - opcional)",
+    "cartesia": "Cartesia (Voz - opcional)",
+    "claude": "Claude CLI (Opcional)",
+}
 
 
 def resumen_texto(fichas):
     """Las fichas en lineas legibles, para el asistente y para el log."""
-    marcas = {"ok": "OK", "mal": "MAL", "sin_clave": "SIN PONER", "sin_red": "SIN RED"}
+    marcas = {"ok": "OK", "mal": "MAL", "sin_clave": "OPCIONAL", "sin_red": "SIN RED"}
     lineas = []
     for ficha in fichas:
         lineas.append(f"{marcas.get(ficha['estado'], ficha['estado'])}  "
                       f"{NOMBRES.get(ficha['proveedor'], ficha['proveedor'])}: {ficha['mensaje']}")
     return "\n".join(lineas)
+

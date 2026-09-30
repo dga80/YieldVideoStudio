@@ -17,34 +17,59 @@ VOCES_EDGE = {
     "es": {
         "alvaro": "es-ES-AlvaroNeural",
         "elvira": "es-ES-ElviraNeural",
-        "abril": "es-ES-AbrilNeural",
-        "jorge": "es-ES-JorgeNeural",
+        "ximena": "es-ES-XimenaNeural",
+        "jorge": "es-MX-JorgeNeural",
         "dalia": "es-MX-DaliaNeural",
+        "gonzalo": "es-CO-GonzaloNeural",
+        "tomas": "es-AR-TomasNeural",
     },
     "en": {
         "christopher": "en-US-ChristopherNeural",
         "guy": "en-US-GuyNeural",
         "jenny": "en-US-JennyNeural",
-    }
+    },
+    "fr": {
+        "henri": "fr-FR-HenriNeural",
+        "denise": "fr-FR-DeniseNeural",
+    },
+    "de": {
+        "conrad": "de-DE-ConradNeural",
+        "katja": "de-DE-KatjaNeural",
+    },
+    "it": {
+        "diego": "it-IT-DiegoNeural",
+        "elsa": "it-IT-ElsaNeural",
+    },
+    "pt": {
+        "antonio": "pt-BR-AntonioNeural",
+        "francisca": "pt-BR-FranciscaNeural",
+    },
 }
 
-VOZ_DEFECTO_ES = "es-ES-AlvaroNeural"
-VOZ_DEFECTO_EN = "en-US-ChristopherNeural"
+VOZ_DEFECTO = {
+    "es": "es-ES-AlvaroNeural",
+    "en": "en-US-ChristopherNeural",
+    "fr": "fr-FR-HenriNeural",
+    "de": "de-DE-ConradNeural",
+    "it": "it-IT-DiegoNeural",
+    "pt": "pt-BR-AntonioNeural",
+}
 
 
 def resolver_voz(voz_solicitada, idioma="es"):
+    idioma = str(idioma or "es").strip().lower()
     if not voz_solicitada:
-        return VOZ_DEFECTO_ES if idioma == "es" else VOZ_DEFECTO_EN
+        return VOZ_DEFECTO.get(idioma, VOZ_DEFECTO["es"])
     
     voz_str = str(voz_solicitada).strip()
     if "Neural" in voz_str:
         return voz_str
     
-    cat = VOCES_EDGE.get(idioma, VOCES_EDGE["es"])
+    cat = VOCES_EDGE.get(idioma, VOCES_EDGE.get("es", {}))
     for k, v in cat.items():
         if k in voz_str.lower():
             return v
-    return VOZ_DEFECTO_ES if idioma == "es" else VOZ_DEFECTO_EN
+    return VOZ_DEFECTO.get(idioma, VOZ_DEFECTO["es"])
 
 
 def resolver_velocidad(velocidad):

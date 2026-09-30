@@ -174,12 +174,15 @@ def proponer(encargo, idioma="es", ajuste=None, avisar=None, proyecto_id=None,
     corte cada dos. Quien decide sigue siendo el encargo.
     """
     encargo = " ".join(str(encargo or "").split())
+    voz_fija = str(voz_fija or "").strip()
     if not encargo:
-        raise RuntimeError("hace falta describir como quieres que suene la voz")
+        if voz_fija:
+            encargo = "Voz seleccionada del catálogo, tono natural y profesional"
+        else:
+            raise RuntimeError("hace falta describir como quieres que suene la voz")
     avisa = avisar if callable(avisar) else (lambda v, m="": v)
 
     avisa(0.05, "leyendo el catalogo de voces")
-    voz_fija = str(voz_fija or "").strip()
     voces, ids = _voces_para_instruccion(idioma, voz_fija)
     if voz_fija and voz_fija not in ids:
         raise RuntimeError(f"la voz elegida a mano ({voz_fija}) no esta en el "

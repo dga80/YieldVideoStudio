@@ -18,11 +18,52 @@ from PIL import ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-#: Donde viven los FICHEROS de fuente. En Windows son las del sistema; en el
-#: servidor se copian LAS MISMAS a una carpeta propia y se apunta con
-#: ESTUDIO_FUENTES. Tienen que ser los mismos ficheros: medir con una fuente y
-#: dibujar con otra da una cuenta bien y un numero mal (ver `p7_callouts`).
-CARPETA_FUENTES = os.environ.get("ESTUDIO_FUENTES") or r"C:\Windows\Fonts"
+CARPETAS_FUENTES = [
+    os.environ.get("ESTUDIO_FUENTES", ""),
+    "/System/Library/Fonts/Supplemental",
+    "/Library/Fonts",
+    "/System/Library/Fonts",
+    os.path.expanduser("~/Library/Fonts"),
+    r"C:\Windows\Fonts",
+    "/usr/share/fonts/truetype",
+    "/usr/share/fonts",
+]
+
+CARPETA_FUENTES = next((c for c in CARPETAS_FUENTES if c and os.path.isdir(c)), r"C:\Windows\Fonts")
+
+NOMBRES_FUENTES = {
+    "verdana": (["verdana.ttf", "Verdana.ttf"], ["verdanab.ttf", "Verdana Bold.ttf", "VerdanaBold.ttf"]),
+    "arial": (["arial.ttf", "Arial.ttf"], ["arialbd.ttf", "Arial Bold.ttf", "ArialBold.ttf"]),
+    "tahoma": (["tahoma.ttf", "Tahoma.ttf"], ["tahomabd.ttf", "Tahoma Bold.ttf"]),
+    "georgia": (["georgia.ttf", "Georgia.ttf"], ["georgiab.ttf", "Georgia Bold.ttf"]),
+    "consolas": (["consola.ttf", "Consolas.ttf", "Menlo.ttc", "Courier New.ttf"],
+                 ["consolab.ttf", "Consolas Bold.ttf", "Menlo.ttc", "Courier New Bold.ttf"]),
+    "segoe ui": (["segoeui.ttf", "Segoe UI.ttf", "HelveticaNeue.ttc", "SF-Pro.ttf", "Arial.ttf", "arial.ttf"],
+                 ["segoeuib.ttf", "Segoe UI Bold.ttf", "HelveticaNeue.ttc", "SF-Pro.ttf", "Arial Bold.ttf", "arialbd.ttf"]),
+}
+
+
+def _buscar_archivo_fuente(candidatos):
+    for carpeta in CARPETAS_FUENTES:
+        if not carpeta or not os.path.isdir(carpeta):
+            continue
+        for cand in candidatos:
+            ruta = os.path.join(carpeta, cand)
+            if os.path.isfile(ruta):
+                return ruta
+    return ""
+
+
+def _resolver_par_fuente(nombre):
+    nombre_l = nombre.lower()
+    cands_normal, cands_negrita = NOMBRES_FUENTES.get(nombre_l) or NOMBRES_FUENTES["verdana"]
+    ruta_norm = _buscar_archivo_fuente(cands_normal)
+    ruta_neg = _buscar_archivo_fuente(cands_negrita)
+    if not ruta_norm and ruta_neg:
+        ruta_norm = ruta_neg
+    if not ruta_neg and ruta_norm:
+        ruta_neg = ruta_norm
+    return ruta_norm, ruta_neg
 
 
 def _ttf(nombre):
@@ -31,16 +72,8 @@ def _ttf(nombre):
 
 #: Las fuentes del sistema, en pares (normal, negrita).
 FUENTES = {
-    "verdana": (_ttf("verdana.ttf"), _ttf("verdanab.ttf")),
-    "arial": (_ttf("arial.ttf"), _ttf("arialbd.ttf")),
-    "tahoma": (_ttf("tahoma.ttf"), _ttf("tahomabd.ttf")),
-    "georgia": (_ttf("georgia.ttf"), _ttf("georgiab.ttf")),
-    "consolas": (_ttf("consola.ttf"), _ttf("consolab.ttf")),
-    # La del cierre de marca del motor anterior, y la unica que no elige un preset:
-    # la web usa Inter, que no viene con Windows, y Segoe UI es la grotesca del
-    # sistema que mas se le parece (misma anchura de trazo y mismas
-    # proporciones). Se mide con la que se dibuja: ver `cartelas.MARCA_LETRA`.
-    "segoe ui": (_ttf("segoeui.ttf"), _ttf("segoeuib.ttf")),
+    nombre: _resolver_par_fuente(nombre)
+    for nombre in ("verdana", "arial", "tahoma", "georgia", "consolas", "segoe ui")
 }
 
 _fuentes = {}
@@ -51,7 +84,28 @@ def fuente(nombre, tam, negrita=False):
     clave = (nombre.lower(), int(tam), bool(negrita))
     if clave not in _fuentes:
         rutas = FUENTES.get(nombre.lower()) or FUENTES["verdana"]
-        _fuentes[clave] = ImageFont.truetype(rutas[1 if negrita else 0], int(tam))
+        ruta = rutas[1 if negrita else 0] if rutas else ""
+        fnt = None
+        if ruta and os.path.isfile(ruta):
+            try:
+                fnt = ImageFont.truetype(ruta, int(tam))
+            except Exception:
+                fnt = None
+        if fnt is None:
+            # Fallback a cualquier fuente del sistema disponible
+            fallback_ruta = _buscar_archivo_fuente(["Verdana.ttf", "verdana.ttf", "Arial.ttf", "arial.ttf", "Helvetica.ttc"])
+            if fallback_ruta:
+                try:
+                    fnt = ImageFont.truetype(fallback_ruta, int(tam))
+                except Exception:
+                    fnt = None
+        if fnt is None:
+            # Último recurso: fuente por defecto de Pillow
+            try:
+                fnt = ImageFont.load_default(size=int(tam))
+            except TypeError:
+                fnt = ImageFont.load_default()
+        _fuentes[clave] = fnt
     return _fuentes[clave]
 
 

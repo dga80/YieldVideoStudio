@@ -5,10 +5,12 @@ Si no hay clave activa de imágenes o el proveedor externo tiene restricciones,
 genera un lienzo cinematográfico de alta resolución con las directrices visuales
 para que el pipeline de vídeo, audio y subtítulos nunca se detenga.
 """
+import hashlib
 import io
 import math
 import os
 import random
+import re
 import ssl
 import time
 import urllib.parse
@@ -25,41 +27,135 @@ RATIO_MAP = {
 }
 
 
+def limpiar_y_condensar_prompt(raw_prompt):
+    """Extrae el sujeto visual y el estilo esencial, descartando preámbulos extensos.
+
+    Pollinations y APIs externas fallan con HTTP 402/414 si la URL excede 1000 caracteres.
+    Condensar a < 280 caracteres garantiza respuestas rápidas, estables y fieles.
+    """
+    texto = raw_prompt.strip()
+
+    # 1. Si hay corrección explícita, tiene prioridad
+    m_corr = re.search(r"Correction,\s*this takes priority:\s*([^\.\n]+)", texto, re.I)
+    correccion = m_corr.group(1).strip() if m_corr else ""
+
+    # 2. Si hay escena concreta de plano
+    m_scene = re.search(r"(?:Scene|Escena|SHOT|PLANO):\s*([^\.\n]+(?:\.[^\.\n]+)?)", texto, re.I)
+    escena = m_scene.group(1).strip() if m_scene else ""
+
+    # 3. Detectar si hay prompt de eje o sujeto principal
+    m_sujeto = re.search(r"\b(A single character[^\.\n]+|Three ordinary people[^\.\n]+|A wide shot[^\.\n]+|A wide exterior[^\.\n]+|A close-up of[^\.\n]+|A simple schematic[^\.\n]+)", texto, re.I)
+    sujeto = m_sujeto.group(1).strip() if m_sujeto else ""
+
+    # 4. Extraer palabras clave de estilo
+    m_estilo = re.search(r"\b(minimalist\s+2D[^\.\n]+|stick[- ]figure[^\.\n]+|flat\s+vector[^\.\n]+|anime[^\.\n]+|cartoon[^\.\n]+|comic\s+book[^\.\n]+|watercolor[^\.\n]+|line\s*art[^\.\n]+)", texto, re.I)
+    estilo_clave = m_estilo.group(1).strip() if m_estilo else ""
+
+    partes = []
+    if correccion:
+        partes.append(correccion)
+    if escena:
+        partes.append(escena)
+    if sujeto and sujeto not in escena:
+        partes.append(sujeto)
+    if estilo_clave and estilo_clave not in escena and estilo_clave not in sujeto:
+        partes.append(estilo_clave)
+
+    if not partes:
+        lineas = []
+        for l in texto.splitlines():
+            l_limpia = l.strip()
+            if not l_limpia:
+                continue
+            if any(l_limpia.startswith(pref) for pref in (
+                "Produce one single", "Draw one single", "Reference image", "Your output is ONE",
+                "The written style guide", "No watermarks", "The language of"
+            )):
+                continue
+            lineas.append(l_limpia)
+        if lineas:
+            partes.append(" ".join(lineas[:2]))
+        else:
+            partes.append(texto[:200])
+
+    prompt_resumen = ", ".join(partes)
+    if len(prompt_resumen) > 280:
+        prompt_resumen = prompt_resumen[:277] + "..."
+    return prompt_resumen
+
+
 def enriquecer_prompt(raw_prompt, tamano="apaisado"):
-    partes = [raw_prompt.strip()]
-    if tamano in ("apaisado", "16:9"):
-        partes.append("cinematic lighting, YouTube composition, high contrast, vivid colors, ultra sharp focus, 8k render, masterpiece")
-    elif tamano in ("vertical", "9:16"):
-        partes.append("vertical composition, dramatic lighting, mobile aesthetic, detailed textures, 8k render")
+    limpio = limpiar_y_condensar_prompt(raw_prompt)
+    partes = [limpio]
+
+    # Detectar si el estilo pide 2D / animación / ilustración plana
+    es_2d = bool(re.search(
+        r"\b(2d|flat|vector|minimalist|cartoon|anime|line\s*art|drawing|illustration|sketch|stick\s*figure|whiteboard|comic|dibujo)\b",
+        raw_prompt, re.I
+    ))
+
+    if es_2d:
+        partes.append("clean line art, 2D vector animation style, high quality illustration")
     else:
-        partes.append("studio lighting, sharp subject, soft bokeh background, high resolution")
+        if tamano in ("apaisado", "16:9"):
+            partes.append("cinematic lighting, YouTube composition, sharp focus, high resolution")
+        elif tamano in ("vertical", "9:16"):
+            partes.append("vertical composition, dramatic lighting, detailed")
+        else:
+            partes.append("studio lighting, sharp subject, high resolution")
+
     return ", ".join(partes)
 
 
 def _crear_lienzo_cinematografico(prompt, width, height):
-    """Crea una tarjeta visual de alta definición con degradado cinematográfico."""
+    """Crea una tarjeta visual de alta definición con degradado cinematográfico único por plano."""
     img = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(img)
 
-    # Degradado oscuro de alta gama (#11141c -> #1b202e)
+    # Huella única del prompt para variar sutilmente el degradado y garantizar unicidad
+    h = hashlib.sha256(prompt.encode("utf-8")).digest()
+    r_base = 16 + (h[0] % 30)
+    g_base = 20 + (h[1] % 30)
+    b_base = 28 + (h[2] % 40)
+    delta_r = 12 + (h[3] % 18)
+    delta_g = 14 + (h[4] % 18)
+    delta_b = 20 + (h[5] % 22)
+
+    # Degradado oscuro de alta gama
     for y in range(height):
         ratio = y / max(1, height)
-        r = int(17 + ratio * 12)
-        g = int(20 + ratio * 14)
-        b = int(28 + ratio * 20)
+        r = int(r_base + ratio * delta_r)
+        g = int(g_base + ratio * delta_g)
+        b = int(b_base + ratio * delta_b)
         draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
 
     # Marco dorado tenue estilo YieldChat
     draw.rectangle([(24, 24), (width - 24, height - 24)], outline=(212, 175, 55, 120), width=2)
     draw.rectangle([(32, 32), (width - 32, height - 32)], outline=(50, 60, 80, 80), width=1)
 
-    # Texto representativo del plano
-    texto_plano = prompt.strip()[:80] + ("..." if len(prompt.strip()) > 80 else "")
+    # Extraer la descripción visual real de la escena (saltando el preámbulo)
+    m_scene = re.search(r"Scene:\s*(.*?)(?:\. This shot|\. SHOT TYPE|\. Time of day|$)", prompt, re.DOTALL | re.IGNORECASE)
+    if m_scene and m_scene.group(1).strip():
+        texto_plano = m_scene.group(1).strip()
+    else:
+        m_narr = re.search(r"narration line:\s*\"(.*?)\"", prompt, re.DOTALL | re.IGNORECASE)
+        if m_narr and m_narr.group(1).strip():
+            texto_plano = m_narr.group(1).strip()
+        else:
+            texto_plano = prompt.strip()[-100:]
+
+    if len(texto_plano) > 100:
+        texto_plano = texto_plano[:97] + "..."
+
     cx, cy = width // 2, height // 2
 
-    # Intentar dibujar texto centrado
-    draw.text((cx, cy - 20), "YIELD STUDIO · PLANO", fill=(212, 175, 55, 200), anchor="mm")
+    # Intentar dibujar texto centrado con huella única
+    tag_hex = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8].upper()
+    draw.text((cx, cy - 20), f"YIELD STUDIO · PLANO {tag_hex}", fill=(212, 175, 55, 220), anchor="mm")
     draw.text((cx, cy + 20), texto_plano, fill=(225, 230, 240, 240), anchor="mm")
+
+    # Identificador de huella único en esquina
+    draw.text((width - 40, height - 35), f"REF {tag_hex}", fill=(180, 190, 210, 140), anchor="rm")
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")

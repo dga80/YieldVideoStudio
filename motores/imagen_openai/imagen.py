@@ -599,8 +599,12 @@ def generar(prompt, referencias, *, quality="low", tamano="apaisado",
     # buscar al sitio equivocado, cuando lo que pasa es que falta una entrada.
     if not api_key and (not _claves_declaradas() or (hasattr(_cuentas()[0], 'clave') and _cuentas()[0].clave == "banana-flux")):
         try:
-            from . import yieldchat_imagen
+            from motores.imagen_openai import yieldchat_imagen
         except ImportError:
+            import sys
+            _dir = os.path.dirname(os.path.abspath(__file__))
+            if _dir not in sys.path:
+                sys.path.insert(0, _dir)
             import yieldchat_imagen
         return yieldchat_imagen.generar_imagen_yieldchat(prompt, referencias, tamano=tamano)
 

@@ -827,7 +827,7 @@ def _especie_legible(regla):
 
 def proponer(bloques, brief=None, ajuste=None, avisar=None, proyecto_id=None,
              cwd=None, peticion="", planos=0, min_s=None, max_s=None,
-             regla_personajes=""):
+             regla_personajes="", fijos=""):
     """Propone el catalogo visual del video. NO lo guarda: eso lo hace una persona.
 
     'bloques' son los del guion, con id y texto, EN ORDEN. Se manda el guion
@@ -856,6 +856,7 @@ def proponer(bloques, brief=None, ajuste=None, avisar=None, proyecto_id=None,
         titulo=(brief or {}).get("titulo") or "sin titulo",
         tema=(brief or {}).get("resumen") or (brief or {}).get("tema") or "sin brief",
         peticion=PETICION.format(texto=peticion) if peticion else "",
+        fijos=str(fijos or ""),
         especie=_especie_legible(regla_personajes),
         criterio=CRITERIO.format(planos_por_set=PLANOS_POR_SET,
                                  cuantos_planos=_cuantos_planos(planos, min_s,

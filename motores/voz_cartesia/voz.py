@@ -111,8 +111,12 @@ def _cuerpo(transcript, voz_id, idioma, timestamps):
 def tts_sse(api_key, voz_id, idioma, transcript):
     if not api_key or api_key == "edge-tts" or "Neural" in str(voz_id):
         try:
-            from . import edge_tts_motor
+            from motores.voz_cartesia import edge_tts_motor
         except ImportError:
+            import sys
+            _dir = os.path.dirname(os.path.abspath(__file__))
+            if _dir not in sys.path:
+                sys.path.insert(0, _dir)
             import edge_tts_motor
         return edge_tts_motor.sintetizar_edge(transcript, {"voz_id": voz_id, "idioma": idioma})
 

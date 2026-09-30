@@ -926,7 +926,7 @@ def previsualizar(ruta_png, ruta_svg, destino, ruta_fija=None, mov=None,
             f'transform-origin:0 0;'
             f'transform:translate({-x0 * escala:.3f}px,{-y0 * escala:.3f}px) '
             f'scale({escala:.6f})">'
-            f'<img src="file:///{ruta_png.replace(chr(92), "/")}" '
+            f'<img src="{medios.ruta_a_url(ruta_png)}" '
             f'style="display:block;width:{lienzo[0]}px;height:{lienzo[1]}px">'
             f'<div style="position:absolute;left:0;top:0;'
             f'width:{lienzo[0]}px;height:{lienzo[1]}px">{svg}</div>'
@@ -970,11 +970,14 @@ def _comprobar_previa(destino):
     y asi queda en disco para poder mirarlo si alguien pregunta por que.
     """
     try:
-        from PIL import Image                                 # noqa: PLC0415
-        esquina = Image.open(destino).convert("RGB").load()[5, 5]
+        from PIL import Image, ImageStat                      # noqa: PLC0415
+        im = Image.open(destino).convert("RGB")
+        esquina = im.load()[5, 5]
+        stat = ImageStat.Stat(im)
+        varianza = max(stat.var) if stat.var else 0.0
     except Exception:                                         # noqa: BLE001
         return
-    if min(esquina) > 200:
+    if min(esquina) > 240 and varianza < 10.0:
         raise RuntimeError(
             f"la previa salio en blanco ({esquina}): Edge ha fotografiado una "
             f"pagina de error en vez del cuadro")

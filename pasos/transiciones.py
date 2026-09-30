@@ -476,7 +476,7 @@ def pagina(destino, ancho, alto, paleta=None):
 
 
 def _url(ruta):
-    return "file:///" + os.path.abspath(ruta).replace("\\", "/")
+    return medios.ruta_a_url(ruta)
 
 
 def componer(navegador, desde, hasta, progreso, frag, destino):

@@ -239,7 +239,7 @@ class Navegador:
             return mensaje.get("result", {})
 
     def abrir(self, ruta_html):
-        url = "file:///" + os.path.abspath(ruta_html).replace("\\", "/")
+        url = medios.ruta_a_url(ruta_html)
         self.llamar("Page.navigate", url=url)
         limite = time.time() + 30
         while time.time() < limite:
@@ -411,7 +411,7 @@ pintar(0);
 
 
 def _url_local(ruta):
-    return "file:///" + os.path.abspath(ruta).replace("\\", "/")
+    return medios.ruta_a_url(ruta)
 
 
 def _pagina_de(escena, mov, capa_svg, hyper, p, destino, capa_fija="", fps=30):
