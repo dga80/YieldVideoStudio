@@ -45,6 +45,23 @@ def limpiar_y_condensar_prompt(raw_prompt):
     m_scene = re.search(r"(?:^|\n|\.\s+)(?:Scene|Escena|SHOT|PLANO):\s*(.*?)(?=\.\s+(?:This shot|SHOT TYPE|Time of day|LETTERING|Correction)|$)", texto, re.DOTALL | re.IGNORECASE)
     if m_scene:
         res = m_scene.group(1).strip().replace("\n", " ")
+        patterns_boilerplate = [
+            r'not a physical location:?\s*',
+            r'a clean conceptual composition on a flat graphic backdrop,?\s*',
+            r'in the exact same flat vector style as the rest of the video,?\s*',
+            r'with the group \'[^\']+\'(?:\s+and\s+the\s+group\s+\'[^\']+\')*\s+drawn as the same stick-figure characters as the rest of the video,?\s*',
+            r'integrated into the composition,?\s*',
+            r'tense faces:[^,\.]*[,.]?\s*',
+            r'tight straight mouth,?\s*',
+            r'lowered drawn-together eyebrows,?\s*',
+            r'hard fixed stare,?\s*',
+            r'No smiling\.?\s*',
+            r'\(TONO:[^\)]+\)\s*',
+        ]
+        for pat in patterns_boilerplate:
+            res = re.sub(pat, '', res, flags=re.IGNORECASE)
+        res = re.sub(r'^\s*[,.\s]+', '', res)
+        res = re.sub(r'\s+', ' ', res).strip()
         subparts = [p.strip() for p in res.split(".") if p.strip()]
         escena = ". ".join(subparts[:2])
     else:
