@@ -15,6 +15,8 @@ import ssl
 import time
 import urllib.parse
 import urllib.request
+import json
+import threading
 from PIL import Image, ImageDraw, ImageFont
 
 RATIO_MAP = {
@@ -40,8 +42,13 @@ def limpiar_y_condensar_prompt(raw_prompt):
     correccion = m_corr.group(1).strip() if m_corr else ""
 
     # 2. Si hay escena concreta de plano
-    m_scene = re.search(r"(?:Scene|Escena|SHOT|PLANO):\s*([^\.\n]+(?:\.[^\.\n]+)?)", texto, re.I)
-    escena = m_scene.group(1).strip() if m_scene else ""
+    m_scene = re.search(r"(?:^|\n|\.\s+)(?:Scene|Escena|SHOT|PLANO):\s*(.*?)(?=\.\s+(?:This shot|SHOT TYPE|Time of day|LETTERING|Correction)|$)", texto, re.DOTALL | re.IGNORECASE)
+    if m_scene:
+        res = m_scene.group(1).strip().replace("\n", " ")
+        subparts = [p.strip() for p in res.split(".") if p.strip()]
+        escena = ". ".join(subparts[:2])
+    else:
+        escena = ""
 
     # 3. Detectar si hay prompt de eje o sujeto principal
     m_sujeto = re.search(r"\b(A single character[^\.\n]+|Three ordinary people[^\.\n]+|A wide shot[^\.\n]+|A wide exterior[^\.\n]+|A close-up of[^\.\n]+|A simple schematic[^\.\n]+)", texto, re.I)
@@ -162,6 +169,38 @@ def _crear_lienzo_cinematografico(prompt, width, height):
     return buf.getvalue()
 
 
+_SEMAFORO_BANANA = None
+_LOCK_INIT = threading.Lock()
+
+def _get_semaforo():
+    global _SEMAFORO_BANANA
+    if _SEMAFORO_BANANA is None:
+        with _LOCK_INIT:
+            if _SEMAFORO_BANANA is None:
+                _SEMAFORO_BANANA = threading.Semaphore(2)
+    return _SEMAFORO_BANANA
+
+
+def _obtener_clave_banana():
+    clave = os.environ.get("POLLINATIONS_API_KEY") or os.environ.get("BANANA_API_KEY")
+    if clave:
+        return clave.strip()
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "secretos", "claves.json")
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, "r", encoding="utf-8") as fh:
+                d = json.load(fh)
+            for k in ("pollinations", "banana", "nano_banana"):
+                c = d.get(k)
+                if isinstance(c, dict) and c.get("clave"):
+                    return str(c["clave"]).strip()
+                elif isinstance(c, str) and c.strip():
+                    return c.strip()
+        except Exception:
+            pass
+    return ""
+
+
 def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=None):
     """Genera la imagen en PNG o recurre al lienzo cinematográfico de alta definición."""
     t0 = time.time()
@@ -172,30 +211,47 @@ def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=N
         seed = random.randint(1000, 999999)
 
     encoded = urllib.parse.quote(prompt_completo)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&seed={seed}"
+    api_key = _obtener_clave_banana()
 
-    try:
-        ctx = ssl._create_unverified_context()
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=12, context=ctx) as resp:
-            data = resp.read()
+    if api_key:
+        url = f"https://gen.pollinations.ai/image/{encoded}?width={width}&height={height}&key={api_key}&seed={seed}"
+    else:
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&seed={seed}"
 
-        img = Image.open(io.BytesIO(data))
-        if img.mode != "RGBA":
-            img = img.convert("RGBA")
+    png_bytes = None
+    modelo_nombre = "banana-sana (YieldChat)"
+    ultimo_error = None
 
-        out_buf = io.BytesIO()
-        img.save(out_buf, format="PNG")
-        png_bytes = out_buf.getvalue()
-        modelo_nombre = "banana-sana (YieldChat)"
-    except Exception as e:
+    sem = _get_semaforo()
+    with sem:
+        for intento in range(2):
+            try:
+                ctx = ssl._create_unverified_context()
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+                }
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=25, context=ctx) as resp:
+                    data = resp.read()
+
+                img = Image.open(io.BytesIO(data))
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
+
+                out_buf = io.BytesIO()
+                img.save(out_buf, format="PNG")
+                png_bytes = out_buf.getvalue()
+                break
+            except Exception as e:
+                ultimo_error = e
+                time.sleep(1.5)
+
+    if not png_bytes:
         # Fallback resiliente: no detiene el render del vídeo ni los subtítulos
-        print(f"[imagen_yieldchat] Nota: proveedor externo ({e}). Usando lienzo cinematográfico HD.", flush=True)
+        print(f"[imagen_yieldchat] Nota: proveedor externo ({ultimo_error}). Usando lienzo cinematográfico HD.", flush=True)
         png_bytes = _crear_lienzo_cinematografico(prompt, width, height)
         modelo_nombre = "yield-canvas (HD)"
 
