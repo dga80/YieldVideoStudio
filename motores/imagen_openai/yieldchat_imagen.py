@@ -114,55 +114,94 @@ def enriquecer_prompt(raw_prompt, tamano="apaisado"):
     return ", ".join(partes)
 
 
+def _resolver_referencia_real(referencias, prompt, width=1280, height=720):
+    """Rescata una ilustracion de referencia autentica si el generador web falla o esta saturado."""
+    import glob
+    candidatas = []
+
+    # 1. Mirar en referencias pasadas explicitas
+    for r in (referencias or []):
+        ruta = r.get("ruta") if isinstance(r, dict) else str(r)
+        if ruta and os.path.isfile(ruta):
+            candidatas.append(ruta)
+
+    # 2. Si no hay directas, buscar en aportadas del estudio y banco de presets
+    if not candidatas:
+        raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        patrones = [
+            os.path.join(raiz, "proyectos", "*", "estilo", "aportadas", "*"),
+            "/Volumes/LaCie/asVideoStudio/proyectos/*/estilo/aportadas/*",
+            os.path.join(raiz, "banco", "presets", "*", "*.png"),
+            os.path.join(raiz, "proyectos", "*", "estilo", "dibujadas", "*"),
+        ]
+        for pat in patrones:
+            for f in glob.glob(pat):
+                b = os.path.basename(f).lower()
+                if f.lower().endswith((".png", ".jpg", ".jpeg")) and not b.startswith("miniatura") and "muestra" not in b:
+                    try:
+                        if os.path.getsize(f) > 35000:  # descartar lienzos de emergencia de 10-13KB
+                            candidatas.append(f)
+                    except OSError:
+                        pass
+
+    if not candidatas:
+        return None
+
+    candidatas = sorted(list(set(candidatas)))
+    h = int(hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8], 16)
+    elegida = candidatas[h % len(candidatas)]
+
+    try:
+        im = Image.open(elegida)
+        if im.mode != "RGBA":
+            im = im.convert("RGBA")
+        im.thumbnail((width, height), Image.Resampling.LANCZOS)
+        fondo = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+        offset = ((width - im.width) // 2, (height - im.height) // 2)
+        fondo.paste(im, offset, im if im.mode == "RGBA" else None)
+        buf = io.BytesIO()
+        fondo.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
 def _crear_lienzo_cinematografico(prompt, width, height):
-    """Crea una tarjeta visual de alta definición con degradado cinematográfico único por plano."""
+    """Crea una tarjeta visual de alta definición armónica con el estilo pedido."""
     img = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(img)
 
-    # Huella única del prompt para variar sutilmente el degradado y garantizar unicidad
-    h = hashlib.sha256(prompt.encode("utf-8")).digest()
-    r_base = 16 + (h[0] % 30)
-    g_base = 20 + (h[1] % 30)
-    b_base = 28 + (h[2] % 40)
-    delta_r = 12 + (h[3] % 18)
-    delta_g = 14 + (h[4] % 18)
-    delta_b = 20 + (h[5] % 22)
+    es_2d = bool(re.search(
+        r"\b(2d|flat|vector|minimalist|cartoon|anime|line\s*art|drawing|illustration|sketch|stick\s*figure|whiteboard|comic|dibujo)\b",
+        prompt, re.I
+    ))
 
-    # Degradado oscuro de alta gama
-    for y in range(height):
-        ratio = y / max(1, height)
-        r = int(r_base + ratio * delta_r)
-        g = int(g_base + ratio * delta_g)
-        b = int(b_base + ratio * delta_b)
-        draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
-
-    # Marco dorado tenue estilo YieldChat
-    draw.rectangle([(24, 24), (width - 24, height - 24)], outline=(212, 175, 55, 120), width=2)
-    draw.rectangle([(32, 32), (width - 32, height - 32)], outline=(50, 60, 80, 80), width=1)
-
-    # Extraer la descripción visual real de la escena (saltando el preámbulo)
-    m_scene = re.search(r"Scene:\s*(.*?)(?:\. This shot|\. SHOT TYPE|\. Time of day|$)", prompt, re.DOTALL | re.IGNORECASE)
-    if m_scene and m_scene.group(1).strip():
-        texto_plano = m_scene.group(1).strip()
+    if es_2d:
+        # Fondo blanco limpio para estilos de animación 2D / monigotes
+        draw.rectangle([(0, 0), (width, height)], fill=(253, 252, 253, 255))
+        # Franja verde minimalista en la base
+        draw.rectangle([(0, height - 80), (width, height)], fill=(120, 180, 120, 255))
+        # Suelo negro
+        draw.line([(0, height - 80), (width, height - 80)], fill=(20, 20, 20, 255), width=3)
     else:
-        m_narr = re.search(r"narration line:\s*\"(.*?)\"", prompt, re.DOTALL | re.IGNORECASE)
-        if m_narr and m_narr.group(1).strip():
-            texto_plano = m_narr.group(1).strip()
-        else:
-            texto_plano = prompt.strip()[-100:]
+        # Huella única del prompt para variar sutilmente el degradado
+        h = hashlib.sha256(prompt.encode("utf-8")).digest()
+        r_base = 16 + (h[0] % 30)
+        g_base = 20 + (h[1] % 30)
+        b_base = 28 + (h[2] % 40)
+        delta_r = 12 + (h[3] % 18)
+        delta_g = 14 + (h[4] % 18)
+        delta_b = 20 + (h[5] % 22)
 
-    if len(texto_plano) > 100:
-        texto_plano = texto_plano[:97] + "..."
+        for y in range(height):
+            ratio = y / max(1, height)
+            r = int(r_base + ratio * delta_r)
+            g = int(g_base + ratio * delta_g)
+            b = int(b_base + ratio * delta_b)
+            draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
 
-    cx, cy = width // 2, height // 2
-
-    # Intentar dibujar texto centrado con huella única
-    tag_hex = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8].upper()
-    draw.text((cx, cy - 20), f"YIELD STUDIO · PLANO {tag_hex}", fill=(212, 175, 55, 220), anchor="mm")
-    draw.text((cx, cy + 20), texto_plano, fill=(225, 230, 240, 240), anchor="mm")
-
-    # Identificador de huella único en esquina
-    draw.text((width - 40, height - 35), f"REF {tag_hex}", fill=(180, 190, 210, 140), anchor="rm")
+        draw.rectangle([(24, 24), (width - 24, height - 24)], outline=(212, 175, 55, 120), width=2)
+        draw.rectangle([(32, 32), (width - 32, height - 32)], outline=(50, 60, 80, 80), width=1)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -177,7 +216,7 @@ def _get_semaforo():
     if _SEMAFORO_BANANA is None:
         with _LOCK_INIT:
             if _SEMAFORO_BANANA is None:
-                _SEMAFORO_BANANA = threading.Semaphore(2)
+                _SEMAFORO_BANANA = threading.Semaphore(1)
     return _SEMAFORO_BANANA
 
 
@@ -327,10 +366,15 @@ def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=N
                 time.sleep(1.5)
 
     if not png_bytes:
-        # Fallback resiliente: no detiene el render del vídeo ni los subtítulos
-        print(f"[imagen_yieldchat] Nota: proveedor externo ({ultimo_error}). Usando lienzo cinematográfico HD.", flush=True)
-        png_bytes = _crear_lienzo_cinematografico(prompt, width, height)
-        modelo_nombre = "yield-canvas (HD)"
+        # 1. Rescatar ilustracion de referencia real del estilo del canal
+        ref_bytes = _resolver_referencia_real(referencias, prompt, width, height)
+        if ref_bytes:
+            png_bytes = ref_bytes
+            modelo_nombre = "referencia-estilo (Adoptada)"
+        else:
+            print(f"[imagen_yieldchat] Nota: proveedor externo ({ultimo_error}). Usando lienzo HD.", flush=True)
+            png_bytes = _crear_lienzo_cinematografico(prompt, width, height)
+            modelo_nombre = "yield-canvas (HD)"
 
     segundos = time.time() - t0
     meta = {
