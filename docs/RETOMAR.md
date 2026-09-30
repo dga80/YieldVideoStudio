@@ -1,7 +1,13 @@
-# RETOMAR — estado al cerrar el 10-09-2026
+# RETOMAR — estado al cerrar el 30-09-2026
 
-**Lo último (10-09, tarde): la guía de inicio y el asistente**, desplegados en
-el VPS (ver §7). Las 23 suites en verde y las herramientas de análisis limpias.
+**Última actualización (30-09-2026):**
+- Mudanza de almacenamiento completada a disco externo `/Volumes/LaCie/asVideoStudio/proyectos/` (1.160 enlaces relocalizados).
+- Proyecto en curso: *¿Qué pasaría si la humanidad dejara de morir durante 24 horas?* (Guion y voz listos al 100%, 120 escenas generadas en canvas maqueta).
+- Motor Nano Banana / Pollinations depurado con concurrencia regulada y soporte de API Key (ver detalle en [`docs/SESION_2026_09_30.md`](file:///Users/danidev/Desktop/asVideoStudio/docs/SESION_2026_09_30.md)).
+
+---
+
+# Histórico anterior (10-09-2026)
 
 **Después (10-09, noche): la parada «Encargo» en la barra de abajo**, desplegada
 en `/opt/studio-v2/app` (`app.js`, `estilo.css`, `app.py`; `studio-v2@adrian`
