@@ -7396,11 +7396,10 @@ function pieLight() {
                   textoDelPlan('video')),
       h('button', {
         clase: 'primario',
-        disabled: corriendo || !hayAudio || (hayVideo && !obsoleto)
-                  || quedaVideo === false,
-        onclick: () => lanzarTandaLight('video'),
+        disabled: corriendo || !hayAudio,
+        onclick: () => lanzarTandaLight('video', (quedaVideo === false || (hayVideo && obsoleto)) ? 'todo' : 'pendientes'),
       }, (hayVideo && obsoleto) ? 'Poner al día las imágenes'
-         : 'Generar imágenes')),
+         : (quedaVideo === false ? 'Regenerar imágenes' : 'Generar imágenes'))),
     /* LA PASTILLA SOLO SI ESTE BOTON TIENE ALGO QUE HACER.
        Miraba el estado de los pasos y el boton mira el PLAN, y no son lo
        mismo: regenerar las capas deja el MP4 viejo --y eso es verdad-- pero la

@@ -201,10 +201,87 @@ def _obtener_clave_banana():
     return ""
 
 
+def _intentar_generar_gemini(prompt, width, height, tamano="apaisado"):
+    """Intenta generar la imagen usando los modelos de imagen oficiales de Google Gemini."""
+    try:
+        from pasos import gemini_cliente
+    except ImportError:
+        try:
+            import gemini_cliente
+        except ImportError:
+            return None, None
+
+    api_key = gemini_cliente.obtener_api_key()
+    if not api_key:
+        return None, None
+
+    modelos = [
+        "gemini-2.5-flash-image",
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
+        "gemini-3.1-flash-lite-image"
+    ]
+
+    prompt_limpio = enriquecer_prompt(prompt, tamano)
+    payload = {
+        "contents": [{"parts": [{"text": prompt_limpio}]}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE"]
+        }
+    }
+
+    import requests
+    import base64
+
+    for modelo in modelos:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={api_key}"
+            resp = requests.post(url, json=payload, timeout=25)
+            if resp.status_code == 200:
+                data = resp.json()
+                cands = data.get("candidates", [])
+                if cands:
+                    parts = cands[0].get("content", {}).get("parts", [])
+                    for p in parts:
+                        if "inlineData" in p and p["inlineData"].get("data"):
+                            raw = base64.b64decode(p["inlineData"]["data"])
+                            img = Image.open(io.BytesIO(raw))
+                            if img.size != (width, height):
+                                img = img.resize((width, height), Image.Resampling.LANCZOS)
+                            if img.mode != "RGBA":
+                                img = img.convert("RGBA")
+                            buf = io.BytesIO()
+                            img.save(buf, format="PNG")
+                            return buf.getvalue(), f"{modelo} (Google Gemini)"
+            elif resp.status_code == 429:
+                # Cuota no disponible / límite 0 en Free Tier de Google AI Studio
+                continue
+        except Exception:
+            continue
+
+    return None, None
+
+
 def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=None):
-    """Genera la imagen en PNG o recurre al lienzo cinematográfico de alta definición."""
+    """Genera la imagen en PNG usando Google Gemini o recurriendo a fallback resiliente."""
     t0 = time.time()
     width, height = RATIO_MAP.get(tamano, (1280, 720))
+
+    # 1. Intentar primero con Google Gemini
+    gemini_bytes, gemini_modelo = _intentar_generar_gemini(prompt, width, height, tamano)
+    if gemini_bytes:
+        segundos = time.time() - t0
+        meta = {
+            "segundos": round(segundos, 1),
+            "quality": "high",
+            "refs": len(referencias or []),
+            "coste": 0.0,
+            "modelo": gemini_modelo,
+            "tamano": f"{width}x{height}",
+            "usage": {}
+        }
+        return gemini_bytes, meta
+
     prompt_completo = enriquecer_prompt(prompt, tamano)
 
     if seed is None:
