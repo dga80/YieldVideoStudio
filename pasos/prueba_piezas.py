@@ -3083,32 +3083,29 @@ def prueba_transiciones():
     reparto = transiciones.resolver(escenas, {})
     igual(reparto["S001"]["tipo"], "corte",
           "el primer plano nunca encadena: no hay de donde venir")
-    # El corte seco se retiro el 20-08-2026 y los planes ya guardados lo traen
-    # escrito: se traducen a 'suave' al renderizar, o el video seguiria saliendo
-    # a cortes secos hasta volver a planificarlo (que cuesta dinero).
     cortes = [s for s, c in reparto.items() if c["tipo"] == "corte"]
-    igual(cortes, ["S001"], "y es el UNICO corte seco del video")
-    igual([c["ranura"] for s, c in reparto.items() if s != "S001" and
-           escenas[int(s[1:]) - 1]["transicion"] == "corte"][:1], ["suave"],
-          "una ranura 'corte' de un plan viejo se renderiza como suave")
-    con_shader = [c for c in reparto.values() if c["tipo"] != "corte"]
-    ok(con_shader, "y las demas traen su shader")
+    igual(len(cortes), len(escenas), "por defecto todo son cortes secos")
+
+    params_varias = {"transiciones": ["glitch", "fundido", "sdf-iris"]}
+    reparto_varias = transiciones.resolver(escenas, params_varias)
+    con_shader = [c for c in reparto_varias.values() if c["tipo"] != "corte"]
+    ok(con_shader, "con transiciones elegidas traen su shader")
     ok(all(c["shader"] for c in con_shader), "con el GLSL dentro, listo para pintar")
 
     titulo("transiciones: determinista, y sin repetir familia seguida")
-    otra_vez = transiciones.resolver(escenas, {})
-    igual({s: c["tipo"] for s, c in reparto.items()},
+    otra_vez = transiciones.resolver(escenas, params_varias)
+    igual({s: c["tipo"] for s, c in reparto_varias.items()},
           {s: c["tipo"] for s, c in otra_vez.items()},
           "el mismo plan da el mismo reparto: rehacer un clip no descoloca otro")
     familias = [transiciones.CATALOGO[c["tipo"]]["familia"]
-                for c in reparto.values() if c["tipo"] != "corte"]
+                for c in reparto_varias.values() if c["tipo"] != "corte"]
     seguidas = [(a, b) for a, b in zip(familias, familias[1:]) if a == b]
     igual(seguidas, [], f"no se repite familia: {familias}")
 
     titulo("transiciones: ninguna se come el plano que entra")
     cortas = [{"id": "S001", "duracion": 4.0, "transicion": "corte"},
               {"id": "S002", "duracion": 1.2, "transicion": "acento"}]
-    ficha = transiciones.resolver(cortas, {"duracion_transicion": 0.9})["S002"]
+    ficha = transiciones.resolver(cortas, {"transiciones": ["light-leak"], "duracion_transicion": 0.9})["S002"]
     ok(ficha["duracion"] <= 1.2 * transiciones.FRACCION_MAXIMA + 0.001,
        f"un plano de 1,2 s no admite 0,9 s de transicion ({ficha['duracion']})")
 
@@ -3117,7 +3114,7 @@ def prueba_transiciones():
               {"id": "S002", "duracion": 4.0, "transicion": "flash"},
               {"id": "S003", "duracion": 4.0, "transicion": "fundido"},
               {"id": "S004", "duracion": 4.0, "transicion": "deslizar"}]
-    reparto = transiciones.resolver(viejas, {})
+    reparto = transiciones.resolver(viejas, {"transiciones": ["fundido"]})
     igual(reparto["S002"]["ranura"], "acento", "'flash' era un acento")
     igual(reparto["S003"]["ranura"], "suave", "'fundido' era una suave")
     igual(reparto["S004"]["ranura"], "suave",
@@ -3130,7 +3127,7 @@ def prueba_transiciones():
     ok(usadas <= {"glitch", "fundido"},
        f"con una sola elegida se usa esa (y el fundido de respaldo): {usadas}")
     inventadas = transiciones.elegidas_de({"transiciones": ["no_existe"]})
-    igual(sorted(inventadas), sorted(t for t in transiciones.POR_DEFECTO if t != "corte"),
+    igual(sorted(inventadas), sorted(list(transiciones.POR_DEFECTO)),
           "un nombre inventado no deja el video sin transiciones: caen las de fabrica")
 
     titulo("transiciones: la rampa de progreso no repite fotograma")

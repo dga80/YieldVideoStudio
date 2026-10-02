@@ -94,37 +94,37 @@ CATALOGO = {
         "nombre": "Fundido",
         "descripcion": "Un plano se disuelve en el otro. Lo de siempre, y lo que mejor cierra una frase.",
         "familia": "mezcla", "fuerza": 1, "factor": 1.0,
-        "defecto": True, "origen": "estudio",
+        "defecto": False, "origen": "estudio",
     },
     "flash-through-white": {
         "nombre": "Destello blanco",
         "descripcion": "Pasa por blanco a medio camino. El acento clasico: se nota y no distrae.",
         "familia": "destello", "fuerza": 2, "factor": 0.9,
-        "defecto": True, "origen": "hyperframes",
+        "defecto": False, "origen": "hyperframes",
     },
     "light-leak": {
         "nombre": "Fuga de luz",
         "descripcion": "Una vela de luz calida entra por una esquina y se lo come todo. Tinta con el acento del video.",
         "familia": "destello", "fuerza": 2, "factor": 1.5,
-        "defecto": True, "origen": "hyperframes",
+        "defecto": False, "origen": "hyperframes",
     },
     "sdf-iris": {
         "nombre": "Iris",
         "descripcion": "El plano nuevo se abre en circulo desde el centro, con un anillo encendido en el borde.",
         "familia": "iris", "fuerza": 2, "factor": 1.1,
-        "defecto": True, "origen": "hyperframes",
+        "defecto": False, "origen": "hyperframes",
     },
     "cinematic-zoom": {
         "nombre": "Zoom desenfocado",
         "descripcion": "Los dos planos se estiran hacia el centro con desenfoque radial. Muy de cine.",
         "familia": "optica", "fuerza": 2, "factor": 1.4,
-        "defecto": True, "origen": "hyperframes",
+        "defecto": False, "origen": "hyperframes",
     },
     "whip-pan": {
         "nombre": "Latigazo",
         "descripcion": "Barrido horizontal con arrastre, como girar la camara de golpe. Corto por definicion.",
         "familia": "barrido", "fuerza": 3, "factor": 0.7,
-        "defecto": True, "origen": "hyperframes",
+        "defecto": False, "origen": "hyperframes",
     },
     "chromatic-split": {
         "nombre": "Separacion de color",
@@ -218,12 +218,11 @@ def frag_de(nombre):
 def elegidas_de(params):
     """Las transiciones que entran en este video, validadas contra el catalogo.
 
-    Vacio = las de fabrica, que es como funcionan los arquetipos de rotulo: una
-    lista vacia significa «no lo he tocado», no «ninguna».
+    Vacio = las de fabrica: corte seco.
     """
     pedidas = [str(t) for t in ((params or {}).get("transiciones") or [])]
-    validas = [t for t in pedidas if t in CATALOGO and t != "corte"]
-    return validas or [t for t in POR_DEFECTO if t != "corte"]
+    validas = [t for t in pedidas if t in CATALOGO]
+    return validas or list(POR_DEFECTO)
 
 
 def _bolsas(elegidas):
@@ -251,13 +250,23 @@ def resolver(escenas, params=None, semilla=0):
 
     Devuelve {id_de_plano: {"tipo","shader","duracion","ranura"}}. El primer
     plano nunca lleva transicion: no hay nada de lo que venir.
-
-    Determinista igual que el reparto de cartas: rehacer el render de un plano
-    suelto no puede cambiarle la transicion a otro, o el video se descuadra por
-    haber tocado algo que estaba bien.
     """
     p = params or {}
     elegidas = elegidas_de(p)
+
+    # Si la eleccion es solo corte seco (defecto de fabrica o pedido), ningun plano encadena
+    if elegidas == ["corte"] or not any(t != "corte" for t in elegidas):
+        return {
+            escena["id"]: {
+                "tipo": "corte",
+                "shader": None,
+                "duracion": 0.0,
+                "ranura": "corte",
+            }
+            for escena in (escenas or [])
+            if escena.get("id")
+        }
+
     suaves, acentos = _bolsas(elegidas)
     base = float(p.get("duracion_transicion") or 0.4)
 
@@ -268,13 +277,11 @@ def resolver(escenas, params=None, semilla=0):
             continue
         cruda = str(escena.get("transicion") or "suave")
         ranura = cruda if cruda in RANURAS else RANURA_DE_LO_VIEJO.get(cruda, "suave")
-        # EL CORTE SECO SE RETIRO el 20-08-2026 (decision del usuario: "no me
-        # gusta como queda"). El motor del corte ya no lo reparte, pero los
-        # planes GUARDADOS lo traen escrito plano a plano, asi que se traduce
-        # aqui tambien: si no, un video ya planificado seguiria saliendo a
-        # cortes secos hasta volver a planificarlo, que cuesta dinero.
+        # El corte seco se respeta tal cual si la ranura lo pide:
         if ranura == "corte":
-            ranura = "suave"
+            salida[sid] = {"tipo": "corte", "shader": None, "duracion": 0.0,
+                           "ranura": "corte"}
+            continue
         # El plano que CONTINUA a otro no encadena: es la segunda mitad de un
         # plano que dura el doble (p6._estirar_cabeceras), asi que los dos
         # fotogramas del corte son la misma imagen. Cualquier transicion ahi
@@ -499,7 +506,7 @@ def componer(navegador, desde, hasta, progreso, frag, destino):
 def describir(params=None):
     """Frase corta con la paleta de transiciones puesta, para la pantalla."""
     elegidas = elegidas_de(params)
-    nombres = [CATALOGO[t]["nombre"] for t in CATALOGO if t in elegidas]
+    nombres = [CATALOGO[t]["nombre"] for t in CATALOGO if t in elegidas and t != "corte"]
     return ", ".join(nombres) if nombres else "solo cortes secos"
 
 

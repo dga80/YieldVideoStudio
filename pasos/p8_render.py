@@ -60,14 +60,14 @@ PARAMS_POR_DEFECTO = {
     # Duracion BASE de una transicion. Cada una la multiplica por su factor (un
     # latigazo es corto por definicion, una fuga de luz necesita respirar) y
     # ninguna puede comerse mas de una fraccion del plano que entra.
-    "duracion_transicion": 0.4,
-    # QUE transiciones entran en este video. Vacio = las de fabrica.
+    "duracion_transicion": 0.0,
+    # QUE transiciones entran en este video. Vacio o ['corte'] = corte seco directo.
     #
     # Es un parametro del RENDER y no del plan a proposito: el plan decide DONDE
     # va un acento -- eso pertenece al corte y se decide con el guion delante --
     # y esto decide CUAL. Asi cambiar la paleta de transiciones deja obsoleto el
     # render y nada mas: ni las imagenes ni las capas.
-    "transiciones": [],
+    "transiciones": ["corte"],
     "conservar_frames": False,
     # CUANTOS PROCESOS DE CAPTURA A LA VEZ. 0 = automatico (ver LOTES_A_LA_VEZ),
     # 1 = en fila. Es una palanca de VELOCIDAD pura: el video sale identico
@@ -898,7 +898,8 @@ def renderizar_plano(tarea, navegador=None):
     corte = tarea.get("corte") or {}
     pintados = 0
     anterior = tarea.get("anterior")
-    if anterior and transiciones.cuece_el_anterior(corte):
+    duracion_corte = float(corte.get("duracion") or 0)
+    if anterior and transiciones.cuece_el_anterior(corte) and duracion_corte > 0 and corte.get("shader"):
         # el plano de antes puede estar renderizandose en otro proceso: su
         # ultimo fotograma es la senal de que ya se puede mezclar con el
         listo = True

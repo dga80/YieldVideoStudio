@@ -33,3 +33,4 @@ despliegue/login/node_modules/
 despliegue/login/datos/
 node_modules/
 .claude/
+.DS_Store

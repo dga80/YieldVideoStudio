@@ -240,6 +240,26 @@ def _palabras_narracion(proyecto, params):
     pares.sort(key=lambda par: par[0]["s"])
     palabras = [par[0] for par in pares]
     muros = [i for i in range(1, len(pares)) if pares[i][1] != pares[i - 1][1]]
+    # Si las marcas de voz vinieron de un audio_meta antiguo sin puntuacion,
+    # se recupera la puntuacion de los bloques de texto para que los planos y
+    # subtitulos conserven los puntos y comas.
+    bloques_guion = meta.get("bloques") or []
+    if bloques_guion and palabras:
+        texto_guion_palabras = []
+        for b in bloques_guion:
+            texto_guion_palabras.extend(str(b.get("narracion") or "").split())
+        if len(texto_guion_palabras) == len(palabras):
+            for p, w_orig in zip(palabras, texto_guion_palabras):
+                p["w"] = w_orig
+        elif texto_guion_palabras:
+            import difflib
+            v_clean = [re.sub(r"^[^\wáéíóúüñÁÉÍÓÚÜÑ]+|[^\wáéíóúüñÁÉÍÓÚÜÑ]+$", "", str(p.get("w", "") or "")).lower() for p in palabras]
+            g_clean = [re.sub(r"^[^\wáéíóúüñÁÉÍÓÚÜÑ]+|[^\wáéíóúüñÁÉÍÓÚÜÑ]+$", "", str(w or "")).lower() for w in texto_guion_palabras]
+            matcher = difflib.SequenceMatcher(None, v_clean, g_clean, autojunk=False)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "equal":
+                    for k in range(min(i2 - i1, j2 - j1)):
+                        palabras[i1 + k]["w"] = texto_guion_palabras[j1 + k]
     return palabras, muros, ruta, meta
 
 

@@ -8373,16 +8373,16 @@ function vistaVideoLight() {
       ? 'Tienes notas del repaso sin aplicar. Esto solo volveria a montar el MP4 '
         + 'y saldria igual, sin ellas. Usa «Aplicar los cambios» de abajo: '
         + 'aplica y monta, en un solo trabajo.'
-      : (quedaTandaLight('render') === false
+      : (!hayMp4Light() && quedaTandaLight('render') === false
         ? 'El MP4 esta al dia con los planos y el audio de ahora. Volver a '
           + 'montarlo daria el mismo fichero.'
-        : unirAyuda('Encadena los planos que ya has visto, con sus transiciones, '
+        : unirAyuda('Encadena los planos con corte seco directo, '
           + 'la voz y la musica, y saca el MP4. No genera ninguna imagen: no '
           + 'cuesta dinero, cuesta tiempo de maquina.', textoDelPlan('render'))),
       h('button', {
         clase: notasSinAplicar ? 'mini' : 'primario',
         disabled: !!trabajoVideoLight() || notasSinAplicar
-                  || quedaTandaLight('render') === false,
+                  || (!hayMp4Light() && quedaTandaLight('render') === false),
         onclick: () => lanzarTandaLight('render',
           (hayMp4Light() && !videoObsoletoLight()) ? 'todo' : 'pendientes'),
       }, hayMp4Light() ? 'Regenerar Vídeo' : 'Generar Vídeo')),

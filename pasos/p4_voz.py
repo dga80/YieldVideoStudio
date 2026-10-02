@@ -915,6 +915,30 @@ def sintetizar_toma(texto, cfg, progreso=None):
     return _toma_real(texto, cfg, avisa)
 
 
+def _restaurar_puntuacion_tramo(palabras_voz, texto_narracion):
+    """Devuelve las palabras habladas restaurando la puntuacion del guion.
+
+    La API de voz (Cartesia) devuelve solo las palabras normalizadas sin signos.
+    Al conservar los signos ortograficos del guion original, los subtitulos y
+    los cortes de plano mantienen sus puntos y comas sin alterar los tiempos.
+    """
+    import difflib
+    palabras_texto = str(texto_narracion or "").split()
+    if not palabras_voz or not palabras_texto:
+        return
+    if len(palabras_voz) == len(palabras_texto):
+        for p_voz, p_txt in zip(palabras_voz, palabras_texto):
+            p_voz["w"] = p_txt
+        return
+    viejas_clean = [re.sub(r"^[^\wáéíóúüñÁÉÍÓÚÜÑ]+|[^\wáéíóúüñÁÉÍÓÚÜÑ]+$", "", str(p.get("w", "") or "")).lower() for p in palabras_voz]
+    nuevas_clean = [re.sub(r"^[^\wáéíóúüñÁÉÍÓÚÜÑ]+|[^\wáéíóúüñÁÉÍÓÚÜÑ]+$", "", str(p or "")).lower() for p in palabras_texto]
+    matcher = difflib.SequenceMatcher(None, viejas_clean, nuevas_clean, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for k in range(min(i2 - i1, j2 - j1)):
+                palabras_voz[i1 + k]["w"] = palabras_texto[j1 + k]
+
+
 def _reparto(bloques, palabras):
     """Reparte las palabras de la toma entre los bloques.
 
@@ -931,7 +955,12 @@ def _reparto(bloques, palabras):
     """
     escenas = [{"id": b["id"], "narracion": marcas_tts.limpiar(b["texto"])}
                for b in bloques]
-    return escenas, motor._repartir_palabras(escenas, palabras or [])
+    reparto = motor._repartir_palabras(escenas, palabras or [])
+    for b in bloques:
+        tramo = reparto.get(b["id"])
+        if tramo:
+            _restaurar_puntuacion_tramo(tramo, marcas_tts.limpiar(b.get("texto") or ""))
+    return escenas, reparto
 
 
 def sintetizar_bloques(bloques, destino, cfg, avisar=None,
