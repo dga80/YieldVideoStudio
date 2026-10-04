@@ -2284,6 +2284,7 @@ function pintarConfig() {
   }
   caja.appendChild(seccionMotoresActivos());
   caja.appendChild(seccionAlmacenamiento());
+  caja.appendChild(seccionGeneradorImagen());
   caja.appendChild(seccionCalidadImagen());
   caja.appendChild(seccionOtrasClaves(ficha));
   caja.appendChild(seccionProveedoresExternos(ficha));
@@ -2310,6 +2311,17 @@ function seccionMotoresActivos() {
     h('div', { clase: 'pista' },
       'El Estudio opera con motores integrados sin coste por uso ($0.00). No necesitas cuentas de pago ni saldo adicional para producir tus vídeos completos.'));
 
+  const genActual = (vista.ajustes && vista.ajustes.ajustes && vista.ajustes.ajustes.generador_imagen) || 'agnes';
+  let nombreMotorImg = 'Agnes AI (Image 2.1 Flash)';
+  let rolMotorImg = 'Generación de planos ultrarrápida y sin coste mediante API de Agnes AI';
+  if (genActual === 'siliconflow') {
+    nombreMotorImg = 'SiliconFlow (FLUX / Z-Image)';
+    rolMotorImg = 'Generación de planos visuales en alta resolución mediante SiliconFlow';
+  } else if (genActual === 'auto') {
+    nombreMotorImg = 'Híbrido Inteligente (Agnes AI + SiliconFlow)';
+    rolMotorImg = 'Pipeline redundante: Agnes AI por defecto y SiliconFlow como respaldo automático';
+  }
+
   const motores = [
     {
       nombre: 'Google Gemini Flash',
@@ -2324,8 +2336,8 @@ function seccionMotoresActivos() {
       coste: '$0.00 (Gratis)',
     },
     {
-      nombre: 'YieldChat / Canvas Cinematográfico HD',
-      rol: 'Generación visual de planos, escenarios y continuidad cinematográfica',
+      nombre: nombreMotorImg,
+      rol: rolMotorImg,
       estado: 'Conectado · Activo',
       coste: '$0.00 (Gratis)',
     },
@@ -2372,6 +2384,87 @@ async function cargarAjustes() {
     vista.almacenamiento = null;
   }
   repintarClaves();
+}
+
+
+async function guardarGeneradorImagen(generador) {
+  const vista = estadoConfig();
+  try {
+    const r = await pedir(API.ajustes(),
+                          { method: 'PUT', cuerpo: { generador_imagen: generador } });
+    vista.ajustes = { ...(vista.ajustes || {}), ajustes: r.ajustes, costes: r.costes };
+    toast(`Generador de imágenes cambiado a ${generador.toUpperCase()}`);
+  } catch (e) {
+    vista.error = e.message;
+    toast(`Error: ${e.message}`, true);
+  }
+  repintarClaves();
+}
+
+
+/* EL GENERADOR DE IMÁGENES: Agnes AI vs SiliconFlow vs Automático. */
+function seccionGeneradorImagen() {
+  const vista = estadoConfig();
+  const datos = vista.ajustes;
+  const elegido = (datos && datos.ajustes && datos.ajustes.generador_imagen) || 'agnes';
+  const nombresEtiqueta = {
+    agnes: 'AGNES AI',
+    siliconflow: 'SILICONFLOW',
+    auto: 'HÍBRIDO AUTO',
+  };
+  const caja = h('section', { clase: 'bloque-config' },
+    h('div', { clase: 'fila' },
+      h('h3', {}, 'Generador de imágenes'),
+      h('span', { clase: 'crece' }),
+      datos ? pastillaEstado('ok', (nombresEtiqueta[elegido] || elegido).toUpperCase()) : null));
+  if (!datos) {
+    caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo ajustes...'));
+    return caja;
+  }
+
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Elige el motor de IA para generar los planos visuales. Puedes alternar entre Agnes AI (gratuito) y SiliconFlow en cualquier momento sin perder tus configuraciones.'));
+
+  const generadores = [
+    {
+      id: 'agnes',
+      nombre: 'Agnes AI (Image 2.1 Flash)',
+      precio: '$0.00 (Gratis)',
+      meta: 'API Agnes AI',
+      desc: 'Motor sin coste rápido y ultra-nítido con prompt cinematográfico · Recomendado',
+    },
+    {
+      id: 'siliconflow',
+      nombre: 'SiliconFlow (FLUX / Z-Image)',
+      precio: 'Activo',
+      meta: 'API SiliconFlow',
+      desc: 'Generador de imágenes de alta fidelidad con tu clave actual de SiliconFlow',
+    },
+    {
+      id: 'auto',
+      nombre: 'Automático / Híbrido Resiliente',
+      precio: '$0.00 (Gratis)',
+      meta: 'Fallback dual',
+      desc: 'Genera con Agnes AI primero y salta automáticamente a SiliconFlow si hay límite o lentitud',
+    },
+  ];
+
+  generadores.forEach(g => {
+    const puesta = g.id === elegido;
+    caja.appendChild(h('button', {
+      clase: 'fila-calidad' + (puesta ? ' elegida' : ''),
+      disabled: puesta,
+      title: puesta ? 'es el generador activo'
+        : `cambiar generador a ${g.nombre}`,
+      onclick: () => guardarGeneradorImagen(g.id),
+    },
+      h('span', { clase: 'nombre' }, g.nombre),
+      h('span', { clase: 'precio' }, g.precio),
+      h('span', { clase: 'meta veces' }, g.meta),
+      h('span', { clase: 'meta desglose' }, g.desc)));
+  });
+
+  return caja;
 }
 
 
@@ -2554,13 +2647,81 @@ async function cambiarCarpetaAlmacenamiento(nuevaRuta, moverExistentes) {
 
 function seccionProveedoresExternos(ficha) {
   const detalle = h('details', { clase: 'bloque-config-avanzado' },
-    h('summary', {}, 'Opciones avanzadas: Proveedores externos de pago (Opcional)'),
+    h('summary', {}, 'Opciones avanzadas: Claves de APIs de imagen y externas (Opcional)'),
     h('div', { clase: 'pista', estilo: 'margin-top:8px' },
-      'Por defecto el Estudio opera sin coste con Google Gemini Flash, Edge-TTS y Canvas HD. Solo rellena estos campos si deseas usar deliberadamente APIs comerciales externas de OpenAI, Cartesia o Claude.'),
+      'Aquí puedes ver o cambiar las claves de API de Agnes AI, SiliconFlow, OpenAI, Cartesia o Claude CLI.'),
+    seccionAgnes(ficha),
+    seccionSiliconFlow(ficha),
     seccionOpenAI(ficha),
     seccionCartesia(ficha),
     seccionCLI());
   return detalle;
+}
+
+
+function seccionAgnes(ficha) {
+  const agnes = ficha.agnes || {};
+  const puesta = !!agnes.puesta;
+  const campo = h('input', {
+    type: 'password',
+    placeholder: puesta ? `puesta (${agnes.cola})` : 'sk-… (Agnes AI API Key)',
+  });
+  return h('section', { clase: 'bloque-config', estilo: 'margin-top:10px;' },
+    h('div', { clase: 'fila' },
+      h('h3', {}, 'Agnes AI — imágenes ($0.00)'),
+      h('span', { clase: 'crece' }),
+      pastillaEstado(puesta ? 'ok' : 'vacio', puesta ? (agnes.cola || 'puesta') : 'sin clave')),
+    h('div', { clase: 'pista' },
+      'API de https://agnes-ai.com/ para generación gratuita de planos mediante modelo agnes-image-2.1-flash.'),
+    h('div', { clase: 'fila-clave' }, campo,
+      h('button', {
+        clase: 'mini',
+        onclick: () => {
+          if (!campo.value.trim()) { toast('escribe la clave de Agnes AI', true); return; }
+          guardarClaves({ agnes: { clave: campo.value.trim() } });
+          campo.value = '';
+        },
+      }, 'Cambiar'),
+      (puesta ? h('button', {
+        clase: 'mini fantasma peligro',
+        onclick: () => {
+          if (!window.confirm('¿Quitar la clave de Agnes AI?')) return;
+          guardarClaves({ agnes: { clave: '' } });
+        },
+      }, 'Quitar') : null)));
+}
+
+
+function seccionSiliconFlow(ficha) {
+  const sf = ficha.siliconflow || {};
+  const puesta = !!sf.puesta;
+  const campo = h('input', {
+    type: 'password',
+    placeholder: puesta ? `puesta (${sf.cola})` : 'sk-… (SiliconFlow API Key)',
+  });
+  return h('section', { clase: 'bloque-config', estilo: 'margin-top:10px;' },
+    h('div', { clase: 'fila' },
+      h('h3', {}, 'SiliconFlow — imágenes'),
+      h('span', { clase: 'crece' }),
+      pastillaEstado(puesta ? 'ok' : 'vacio', puesta ? (sf.cola || 'puesta') : 'opcional')),
+    h('div', { clase: 'pista' },
+      'Clave de API de SiliconFlow para generación de planos FLUX / Z-Image.'),
+    h('div', { clase: 'fila-clave' }, campo,
+      h('button', {
+        clase: 'mini',
+        onclick: () => {
+          if (!campo.value.trim()) { toast('escribe la clave de SiliconFlow', true); return; }
+          guardarClaves({ siliconflow: { clave: campo.value.trim() } });
+          campo.value = '';
+        },
+      }, 'Cambiar'),
+      (puesta ? h('button', {
+        clase: 'mini fantasma peligro',
+        onclick: () => {
+          if (!window.confirm('¿Quitar la clave de SiliconFlow?')) return;
+          guardarClaves({ siliconflow: { clave: '' } });
+        },
+      }, 'Quitar') : null)));
 }
 
 
@@ -2813,6 +2974,8 @@ const NOMBRES_PROVEEDOR = {
   gemini: 'Google Gemini Flash — guion y asistente',
   edge_tts: 'Microsoft Edge-TTS — voz neuronal',
   canvas: 'YieldChat Canvas HD — imágenes',
+  siliconflow: 'SiliconFlow (FLUX / Z-Image) — imágenes',
+  agnes: 'Agnes AI (Image 2.1 Flash) — imágenes',
   jamendo: 'Jamendo — música (opcional)',
   freesound: 'FreeSound — efectos (opcional)',
   openai: 'OpenAI (opcional)',

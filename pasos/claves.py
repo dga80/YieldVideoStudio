@@ -109,6 +109,8 @@ def _vacio():
         "jamendo": {"clave": ""},
         "freesound": {"clave": ""},
         "claude_cli": {"cuentas": []},
+        "siliconflow": {"clave": ""},
+        "agnes": {"clave": ""},
     }
 
 
@@ -156,7 +158,7 @@ def _normalizar(datos):
     elif isinstance(cartesia, str):
         base["cartesia"]["clave"] = cartesia.strip()
 
-    for suelta in ("jamendo", "freesound"):
+    for suelta in ("jamendo", "freesound", "siliconflow", "agnes"):
         cruda = datos.get(suelta)
         if isinstance(cruda, dict):
             base[suelta]["clave"] = str(cruda.get("clave") or "").strip()
@@ -329,7 +331,7 @@ def _fusionar(actual, peticion):
     # es la que ya habia. Sin eso, editar la de Jamendo borraria la de Cartesia,
     # porque la clave de verdad no baja al navegador NUNCA y la pantalla manda
     # el centinela en su lugar.
-    for suelta in ("cartesia", "jamendo", "freesound"):
+    for suelta in ("cartesia", "jamendo", "freesound", "siliconflow", "agnes"):
         if suelta in peticion:
             ficha = peticion.get(suelta)
             clave = ficha.get("clave") if isinstance(ficha, dict) else ficha
@@ -473,11 +475,16 @@ def espejar_env(datos=None):
         nuestras["JAMENDO_CLIENT_ID"] = datos["jamendo"]["clave"]
     if datos["freesound"]["clave"]:
         nuestras["FREESOUND_API_KEY"] = datos["freesound"]["clave"]
+    if datos.get("siliconflow", {}).get("clave"):
+        nuestras["SILICONFLOW_API_KEY"] = datos["siliconflow"]["clave"]
+    if datos.get("agnes", {}).get("clave"):
+        nuestras["AGNES_API_KEY"] = datos["agnes"]["clave"]
 
     # Los nombres que ESTA pantalla escribe. Lo que no este aqui se conserva tal
     # cual y en su orden: un .env puede tener cosas que nadie de aqui gestiona.
     gestionadas = {"OPENAI_API_KEY", "CARTESIA_API_KEY",
-                   "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY"} | {
+                   "JAMENDO_CLIENT_ID", "FREESOUND_API_KEY",
+                   "SILICONFLOW_API_KEY", "AGNES_API_KEY"} | {
         f"OPENAI_API_KEY_{i}" for i in range(2, MAX_OPENAI + 1)}
 
     lineas, puestas = [], set()
@@ -549,6 +556,14 @@ def resumen(datos=None):
         "freesound": {
             "puesta": bool(datos["freesound"]["clave"]),
             "cola": tapar(datos["freesound"]["clave"]),
+        },
+        "siliconflow": {
+            "puesta": bool(datos.get("siliconflow", {}).get("clave")),
+            "cola": tapar(datos.get("siliconflow", {}).get("clave")),
+        },
+        "agnes": {
+            "puesta": bool(datos.get("agnes", {}).get("clave")),
+            "cola": tapar(datos.get("agnes", {}).get("clave")),
         },
         "fichero": FICHERO,
         "max_openai": MAX_OPENAI,

@@ -5,6 +5,7 @@ Si no hay clave activa de imágenes o el proveedor externo tiene restricciones,
 genera un lienzo cinematográfico de alta resolución con las directrices visuales
 para que el pipeline de vídeo, audio y subtítulos nunca se detenga.
 """
+import base64
 import hashlib
 import io
 import math
@@ -306,6 +307,107 @@ def _obtener_clave_siliconflow():
     return ""
 
 
+def _obtener_clave_agnes():
+    clave = os.environ.get("AGNES_API_KEY")
+    if clave:
+        return clave.strip()
+    raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    env_file = os.path.join(raiz, "secretos", ".env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    m = re.match(r"^AGNES_API_KEY=(.*)$", line.strip())
+                    if m and m.group(1).strip():
+                        return m.group(1).strip()
+        except Exception:
+            pass
+    ruta = os.path.join(raiz, "secretos", "claves.json")
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, "r", encoding="utf-8") as fh:
+                d = json.load(fh)
+            c = d.get("agnes")
+            if isinstance(c, dict) and c.get("clave"):
+                return str(c["clave"]).strip()
+            elif isinstance(c, str) and c.strip():
+                return c.strip()
+        except Exception:
+            pass
+    return ""
+
+
+def _obtener_generador_preferido():
+    raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ruta = os.path.join(raiz, "ajustes.json")
+    if os.path.exists(ruta):
+        try:
+            with open(ruta, "r", encoding="utf-8") as fh:
+                d = json.load(fh)
+            gen = str(d.get("generador_imagen") or "").strip().lower()
+            if gen in ("agnes", "siliconflow", "auto"):
+                return gen
+        except Exception:
+            pass
+    return "agnes"
+
+
+def _intentar_generar_agnes(prompt, width, height, tamano="apaisado"):
+    """Genera la imagen con Agnes AI (OpenAI-compatible) usando agnes-image-2.1-flash."""
+    api_key = _obtener_clave_agnes()
+    if not api_key:
+        return None, None
+
+    import requests
+    url = "https://apihub.agnes-ai.com/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    img_size = "1024x576" if tamano in ("apaisado", "16:9") else "1024x1024"
+    prompt_completo = enriquecer_prompt(prompt, tamano)
+
+    payload = {
+        "model": "agnes-image-2.1-flash",
+        "prompt": prompt_completo,
+        "size": img_size
+    }
+
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=35)
+        if resp.status_code == 200:
+            data = resp.json()
+            data_arr = data.get("data") or data.get("images") or []
+            if data_arr:
+                img_url = data_arr[0].get("url")
+                b64 = data_arr[0].get("b64_json")
+                if b64:
+                    raw = base64.b64decode(b64)
+                    im = Image.open(io.BytesIO(raw))
+                    if im.size != (width, height):
+                        im = im.resize((width, height), Image.Resampling.LANCZOS)
+                    if im.mode != "RGBA":
+                        im = im.convert("RGBA")
+                    out = io.BytesIO()
+                    im.save(out, format="PNG")
+                    return out.getvalue(), "Agnes Image 2.1 Flash (Agnes AI)"
+                elif img_url:
+                    img_resp = requests.get(img_url, timeout=25)
+                    if img_resp.status_code == 200:
+                        im = Image.open(io.BytesIO(img_resp.content))
+                        if im.size != (width, height):
+                            im = im.resize((width, height), Image.Resampling.LANCZOS)
+                        if im.mode != "RGBA":
+                            im = im.convert("RGBA")
+                        out = io.BytesIO()
+                        im.save(out, format="PNG")
+                        return out.getvalue(), "Agnes Image 2.1 Flash (Agnes AI)"
+    except Exception as e:
+        print(f"[imagen_yieldchat] Agnes AI error: {e}", flush=True)
+    return None, None
+
+
 def _intentar_generar_siliconflow(prompt, width, height, tamano="apaisado"):
     """Genera la imagen con SiliconFlow usando Tongyi-MAI/Z-Image-Turbo o FLUX."""
     api_key = _obtener_clave_siliconflow()
@@ -419,23 +521,92 @@ def _intentar_generar_gemini(prompt, width, height, tamano="apaisado"):
 
 
 def generar_imagen_yieldchat(prompt, referencias=None, tamano="apaisado", seed=None):
-    """Genera la imagen en PNG usando Google Gemini o recurriendo a fallback resiliente."""
+    """Genera la imagen en PNG usando el generador seleccionado (Agnes AI, SiliconFlow) o fallback resiliente."""
     t0 = time.time()
     width, height = RATIO_MAP.get(tamano, (1280, 720))
 
-    # 1. Intentar SiliconFlow primero si hay clave
-    sf_bytes, sf_modelo = _intentar_generar_siliconflow(prompt, width, height, tamano)
-    if sf_bytes:
-        segundos = time.time() - t0
-        return sf_bytes, {
-            "segundos": round(segundos, 1),
-            "quality": "high",
-            "refs": len(referencias or []),
-            "coste": 0.0,
-            "modelo": sf_modelo,
-            "tamano": f"{width}x{height}",
-            "usage": {}
-        }
+    preferido = _obtener_generador_preferido()
+
+    # Si se seleccionó Agnes AI específicamente
+    if preferido == "agnes":
+        ag_bytes, ag_modelo = _intentar_generar_agnes(prompt, width, height, tamano)
+        if ag_bytes:
+            segundos = time.time() - t0
+            return ag_bytes, {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": ag_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
+        # Fallback a SiliconFlow si Agnes falló
+        sf_bytes, sf_modelo = _intentar_generar_siliconflow(prompt, width, height, tamano)
+        if sf_bytes:
+            segundos = time.time() - t0
+            return sf_bytes, {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": sf_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
+    elif preferido == "siliconflow":
+        # SiliconFlow prioritario
+        sf_bytes, sf_modelo = _intentar_generar_siliconflow(prompt, width, height, tamano)
+        if sf_bytes:
+            segundos = time.time() - t0
+            return sf_bytes, {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": sf_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
+        # Fallback a Agnes si SiliconFlow falló o no tiene saldo
+        ag_bytes, ag_modelo = _intentar_generar_agnes(prompt, width, height, tamano)
+        if ag_bytes:
+            segundos = time.time() - t0
+            return ag_bytes, {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": ag_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
+    else: # auto
+        # Probar primero Agnes (gratuito) y luego SiliconFlow
+        ag_bytes, ag_modelo = _intentar_generar_agnes(prompt, width, height, tamano)
+        if ag_bytes:
+            segundos = time.time() - t0
+            return ag_bytes, {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": ag_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
+        sf_bytes, sf_modelo = _intentar_generar_siliconflow(prompt, width, height, tamano)
+        if sf_bytes:
+            segundos = time.time() - t0
+            return sf_bytes, {
+                "segundos": round(segundos, 1),
+                "quality": "high",
+                "refs": len(referencias or []),
+                "coste": 0.0,
+                "modelo": sf_modelo,
+                "tamano": f"{width}x{height}",
+                "usage": {}
+            }
 
     api_key = _obtener_clave_banana()
 

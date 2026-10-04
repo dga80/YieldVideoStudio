@@ -60,8 +60,13 @@ TAMANO = "1536x1024"
 #: 'imagen'.
 TOKENS_ENTRADA_POR_IMAGEN = 5114
 
+#: Generadores de imágenes soportados
+GENERADORES_IMAGEN = ("agnes", "siliconflow", "auto")
+
 POR_DEFECTO = {
     "calidad_imagen": "low",
+    # Generador de imágenes preferido: agnes (Agnes AI) | siliconflow | auto (auto fallback)
+    "generador_imagen": "agnes",
     # Si ya se ha pasado por la guia de inicio (las tarjetas que piden las
     # claves al entrar por primera vez). Vive aqui y no en el navegador
     # porque es de la instalacion, no de la pantalla: desde el movil no hay
@@ -83,6 +88,8 @@ def leer():
             salida[clave] = valor
     if salida.get("calidad_imagen") not in CALIDADES:
         salida["calidad_imagen"] = POR_DEFECTO["calidad_imagen"]
+    if salida.get("generador_imagen") not in GENERADORES_IMAGEN:
+        salida["generador_imagen"] = POR_DEFECTO["generador_imagen"]
     salida["onboarding_visto"] = bool(salida.get("onboarding_visto"))
     salida["carpeta_proyectos"] = str(salida.get("carpeta_proyectos") or "").strip()
     return salida
@@ -103,6 +110,9 @@ def guardar(cambios):
         if clave == "calidad_imagen" and valor not in CALIDADES:
             raise ValueError(
                 f"calidad {valor!r}: solo {', '.join(CALIDADES)}")
+        if clave == "generador_imagen" and valor not in GENERADORES_IMAGEN:
+            raise ValueError(
+                f"generador {valor!r}: solo {', '.join(GENERADORES_IMAGEN)}")
         if clave == "onboarding_visto" and not isinstance(valor, bool):
             raise ValueError("onboarding_visto es verdadero o falso")
         if clave == "carpeta_proyectos" and not isinstance(valor, str):
@@ -110,6 +120,11 @@ def guardar(cambios):
         actual[clave] = valor
     escribir_json(RUTA, actual)
     return actual
+
+
+def generador_imagen():
+    """El generador de imagen configurado ('agnes' | 'siliconflow' | 'auto')."""
+    return leer().get("generador_imagen", "agnes")
 
 
 def calidad_imagen():

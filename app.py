@@ -5439,6 +5439,7 @@ def leer_ajustes():
     """
     return {"ajustes": AJUSTES.leer(),
             "calidades": list(AJUSTES.CALIDADES),
+            "generadores": list(getattr(AJUSTES, "GENERADORES_IMAGEN", ("agnes", "siliconflow", "auto"))),
             "costes": AJUSTES.tabla_de_costes(),
             "tamano": AJUSTES.TAMANO}
 

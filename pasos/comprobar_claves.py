@@ -174,6 +174,33 @@ def probar_freesound(clave):
                                       f"{_texto_corto(respuesta)}")
 
 
+def probar_siliconflow(clave):
+    if not clave:
+        return _ficha("siliconflow", "sin_clave", "sin clave de SiliconFlow (opcional)")
+    respuesta, fallo = _pedir("GET", "https://api.siliconflow.com/v1/user/info",
+                              headers={"Authorization": f"Bearer {clave}"})
+    if respuesta is None:
+        return _ficha("siliconflow", "sin_red", f"no se ha podido hablar con SiliconFlow: {fallo}")
+    if respuesta.status_code == 200:
+        return _ficha("siliconflow", "ok", "SiliconFlow autenticado y activo")
+    return _ficha("siliconflow", "mal", f"SiliconFlow ({respuesta.status_code}): {_texto_corto(respuesta)}")
+
+
+def probar_agnes(clave):
+    if not clave:
+        return _ficha("agnes", "sin_clave", "sin clave de Agnes AI (opcional)")
+    respuesta, fallo = _pedir("GET", "https://apihub.agnes-ai.com/v1/models",
+                              headers={"Authorization": f"Bearer {clave}"})
+    if respuesta is None:
+        return _ficha("agnes", "sin_red", f"no se ha podido hablar con Agnes AI: {fallo}")
+    if respuesta.status_code in (200, 404):
+        # 200 o endpoint reconocido con bearer valido
+        return _ficha("agnes", "ok", "Agnes AI (Image 2.1 Flash) conectado y activo ($0.00)")
+    if respuesta.status_code == 401:
+        return _ficha("agnes", "mal", "Agnes AI no reconoce la clave (401)")
+    return _ficha("agnes", "mal", f"Agnes AI contesta {respuesta.status_code}: {_texto_corto(respuesta)}")
+
+
 def probar_claude(cuentas):
     """Una ficha por cuenta del CLI con sesion, con lo que apunta salud_cli."""
     fichas = []
@@ -227,7 +254,19 @@ def probar_todas(cuentas_claude=(), con_claude=True):
         else:
             fichas.append(_ficha(nombre, "sin_clave", "opcional (sin poner)"))
 
-    # 3. Proveedores externos opcionales (OpenAI, Cartesia, Claude)
+    # 3. Proveedores externos opcionales (OpenAI, Cartesia, Claude, SiliconFlow, Agnes AI)
+    if almacen.get("siliconflow", {}).get("clave"):
+        try:
+            fichas.append(probar_siliconflow(almacen["siliconflow"]["clave"]))
+        except Exception as fallo:                         # noqa: BLE001
+            fichas.append(_ficha("siliconflow", "sin_red", f"la prueba ha fallado: {fallo}"))
+
+    if almacen.get("agnes", {}).get("clave"):
+        try:
+            fichas.append(probar_agnes(almacen["agnes"]["clave"]))
+        except Exception as fallo:                         # noqa: BLE001
+            fichas.append(_ficha("agnes", "sin_red", f"la prueba ha fallado: {fallo}"))
+
     if almacen.get("openai") and almacen["openai"][0].get("clave"):
         try:
             fichas.append(probar_openai(almacen["openai"][0]["clave"]))
@@ -253,6 +292,8 @@ NOMBRES = {
     "gemini": "Google Gemini (Guion y Asistente)",
     "edge_tts": "Microsoft Edge-TTS (Voz neuronal)",
     "canvas": "Canvas Cinematográfico HD (Imágenes)",
+    "siliconflow": "SiliconFlow (Imágenes)",
+    "agnes": "Agnes AI (Imágenes)",
     "freesound": "FreeSound (Efectos de sonido)",
     "jamendo": "Jamendo (Música)",
     "openai": "OpenAI (Imágenes - opcional)",
