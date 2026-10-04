@@ -1348,10 +1348,17 @@ async function refrescarTodo() {
       { depende_de: (PASOS_BASE.find(b => b.id === p.id) || {}).depende_de || [] }, p));
   }
   const nombre = (APP.proyecto && (APP.proyecto.nombre || APP.proyecto.id)) || APP.pid;
+  const preset = (typeof presetActual === 'function') ? presetActual() : null;
   $('#meta-proyecto').innerHTML = '';
   $('#meta-proyecto').append(
     h('b', {}, nombre),
     ` · ${APP.pasos.filter(p => p.estado === 'listo').length}/${APP.pasos.length} pasos listos`);
+  if (preset) {
+    $('#meta-proyecto').append(
+      ' ',
+      h('span', { clase: 'pastilla-preset', title: `Estilo: ${preset.nombre}` },
+        `🎨 ${preset.nombre}`));
+  }
   pintarPestanas();
   // La barra de la pestaña dice qué falta, así que se relee con el estado: sin
   // esto seguiría diciendo «3 sin hacer» después de haberlas hecho a mano. Y
@@ -5139,6 +5146,62 @@ function presetsLight() { return (APP.light.datos || {}).presets || []; }
 
 function fichaLight(id) { return presetsLight().find(p => p.id === id) || null; }
 
+/* Identifica el preset/estilo activo del vídeo o proyecto en curso */
+function presetActual() {
+  const estiloId = (APP.light.video && APP.light.video.estilo)
+    || (APP.proyecto && APP.proyecto.config && APP.proyecto.config.estilo_light)
+    || (APP.proyecto && APP.proyecto.estilo_light)
+    || APP.light.abierto
+    || null;
+  if (!estiloId) return null;
+  const ficha = fichaLight(estiloId);
+  return ficha || { id: estiloId, nombre: estiloId };
+}
+
+/* Semilla / miga de pan visual para saber siempre en qué paso y con qué preset se está */
+function migaDePanLight(pestanaActual) {
+  const v = APP.light.video || {};
+  const preset = presetActual();
+  const contenedor = h('nav', { clase: 'miga-de-pan', 'aria-label': 'Ruta de navegación' });
+
+  // 1. Enlace a la galería de estilos
+  const enlaceEstilos = h('button', {
+    clase: 'enlace-miga',
+    onclick: () => { pararPrevia(); recordarVideoLight(''); irALight('galeria'); },
+  }, 'Estilos');
+  contenedor.append(enlaceEstilos, h('span', { clase: 'separador' }, '›'));
+
+  // 2. Si hay vídeo abierto, enlace al vídeo / encargo
+  if (v.pid) {
+    const nombreVideo = v.nombre || 'Vídeo';
+    if (pestanaActual === 'Encargo') {
+      contenedor.append(h('span', { clase: 'item-activo' }, nombreVideo));
+    } else {
+      const enlaceEncargo = h('button', {
+        clase: 'enlace-miga',
+        onclick: () => { pararPrevia(); v.vista = 'encargo_video'; pintarLight(); },
+      }, nombreVideo);
+      contenedor.append(enlaceEncargo, h('span', { clase: 'separador' }, '›'));
+    }
+  }
+
+  // 3. Pestaña actual (si no es ya el nombre del encargo)
+  if (pestanaActual && pestanaActual !== 'Encargo') {
+    contenedor.append(h('span', { clase: 'item-activo' }, pestanaActual));
+  }
+
+  // 4. Pastilla / indicador bien visible del Preset activo
+  if (preset) {
+    const pastilla = h('span', {
+      clase: 'pastilla-preset',
+      title: `Estilo visual activo: ${preset.nombre}`,
+    }, `🎨 Estilo: ${preset.nombre}`);
+    contenedor.append(pastilla);
+  }
+
+  return contenedor;
+}
+
 /* Los idiomas los sirve el servidor (`presets_light.IDIOMAS`), que es quien
    sabe cuáles entiende la voz y el guion. El respaldo son LOS MISMOS SEIS y no
    solo el castellano: cuando la lista no llegaba —servidor viejo, red caída— el
@@ -6157,6 +6220,7 @@ function vistaElegidoLight() {
   const ficha = fichaLight(APP.light.abierto) || estiloElegido();
   const e = encargoVideoLight();
   const caja = h('div', { clase: 'light-form' });
+  caja.appendChild(migaDePanLight('Nuevo vídeo'));
   caja.appendChild(h('div', { clase: 'light-cab' },
     /* VOLVER A LA GALERIA. La barra de abajo ya tiene «Estilos», pero hace otra
        cosa: OLVIDA el vídeo empezado (`recordarVideoLight('')`), que es lo que
@@ -6538,6 +6602,7 @@ function vistaEncargoVideoLight() {
   const estilo = fichaLight(v.estilo);
   const e = pedidoDelVideoLight().copia;
   const caja = h('div', { clase: 'light-form light-encargo' });
+  caja.appendChild(migaDePanLight('Encargo'));
   caja.appendChild(h('div', { clase: 'light-cab' },
     h('h2', {}, 'El encargo'),
     h('span', { clase: 'meta' },
@@ -7060,6 +7125,7 @@ function costeLightAhora() {
 function vistaGuionLight() {
   const v = APP.light.video;
   const caja = h('div', { clase: 'light-guion' });
+  caja.appendChild(migaDePanLight('Guion'));
   caja.appendChild(h('div', { clase: 'light-cab' },
     h('h2', {}, (v.guion || {}).titulo || v.nombre || 'El guion'),
     h('span', { clase: 'meta' }, v.guion
@@ -8067,6 +8133,7 @@ function irAPrimeraObsoleta() {
 function vistaPreviaLight() {
   const v = videoAbierto();
   const caja = h('div', { clase: 'light-previa' });
+  caja.appendChild(migaDePanLight('Imágenes'));
   const escenas = (PREVIA.ficha || {}).escenas || [];
   const e = escenaPrevia();
 
@@ -8467,6 +8534,7 @@ document.addEventListener('keydown', ev => {
 function vistaVideoLight() {
   const v = videoAbierto();
   const caja = h('div', { clase: 'light-video' });
+  caja.appendChild(migaDePanLight('Vídeo'));
   /* ATRAS VA A LAS DIAPOSITIVAS, NO AL GUION. Del video montado se sale hacia
      atras para MIRAR otra vez lo que se monto --cada escena con su imagen, su
      capa y sus subtitulos--, no para releer el texto. El guion sigue a un paso

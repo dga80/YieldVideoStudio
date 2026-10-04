@@ -20,9 +20,10 @@ FICHERO_CLAVES = os.path.join(CARPETA_SECRETOS, "claves.json")
 MODELOS_FLASH = [
     "gemini-2.5-flash",
     "gemini-3.5-flash",
-    "gemini-flash-latest",
     "gemini-3.6-flash",
+    "gemini-flash-latest",
     "gemini-3.8-flash",
+    "gemini-3.7-flash",
     "gemini-flash-lite-latest",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
@@ -31,6 +32,14 @@ MODELOS_FLASH = [
 MODELOS_PRO = [
     "gemini-3.1-pro-preview",
     "gemini-pro-latest",
+]
+
+SAFETY_SETTINGS_PERMISIVAS = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"},
 ]
 
 _API_KEY_CACHE = None
@@ -193,6 +202,7 @@ def ejecutar(
                         "parts": partes_usuario
                     }
                 ],
+                "safetySettings": SAFETY_SETTINGS_PERMISIVAS,
                 "generationConfig": {
                     "temperature": 0.7 if esfuerzo in ("high", "xhigh", "max") else 0.4,
                     "topP": 0.95,
@@ -211,10 +221,21 @@ def ejecutar(
                         data = resp.json()
                         cands = data.get("candidates", [])
                         if not cands:
-                            raise RuntimeError("Gemini no devolvió candidatos en la respuesta")
+                            feedback = data.get("promptFeedback", {})
+                            motivo = feedback.get("blockReason") or "sin candidatos"
+                            ultimo_error = f"{m_cand}: respuesta sin candidatos (motivo: {motivo})"
+                            break  # intentar con el siguiente modelo de la lista
                         
                         partes = cands[0].get("content", {}).get("parts", [])
+                        if not partes:
+                            motivo = cands[0].get("finishReason") or "sin partes"
+                            ultimo_error = f"{m_cand}: candidato sin texto (finishReason: {motivo})"
+                            break  # intentar con el siguiente modelo de la lista
+                        
                         texto = "".join(p.get("text", "") for p in partes).strip()
+                        if not texto:
+                            ultimo_error = f"{m_cand}: texto de respuesta vacío"
+                            break
                         
                         # Limpiar bloques markdown accidentales si la instrucción pedía JSON puro
                         if "== FORMATO DE SALIDA ==" in instruccion or "JSON" in instruccion or "DEVUELVE SOLO ESTE JSON" in instruccion:

@@ -1437,6 +1437,38 @@ body.modo-light #coste { display: none; }
 }
 .light-cab h2 { font-size: 19px; }
 
+/* ---- migas de pan y pastilla de estilo */
+.miga-de-pan {
+  display: flex; align-items: center; gap: 6px; font-size: 13px;
+  color: var(--tenue); margin-bottom: 12px; flex-wrap: wrap;
+}
+.miga-de-pan .enlace-miga {
+  background: none; border: none; padding: 2px 4px; font-size: 13px;
+  color: var(--acento); cursor: pointer; text-decoration: none; border-radius: 4px;
+}
+.miga-de-pan .enlace-miga:hover {
+  text-decoration: underline; background: var(--hover);
+}
+.miga-de-pan .separador {
+  color: var(--tenue2); font-size: 11px; user-select: none;
+}
+.miga-de-pan .item-activo {
+  color: var(--texto); font-weight: 500;
+}
+.miga-de-pan .pastilla-preset,
+#meta-proyecto .pastilla-preset {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--hueco); border: 1px solid var(--linea);
+  color: var(--texto); font-size: 11px; padding: 2px 7px;
+  border-radius: 12px; font-weight: 500; vertical-align: middle;
+}
+.miga-de-pan .pastilla-preset {
+  margin-left: auto; cursor: pointer;
+}
+.miga-de-pan .pastilla-preset:hover {
+  border-color: var(--acento);
+}
+
 /* ---- la galería: una parrilla de estilos, como una de vídeos */
 
 .galeria-estilos {

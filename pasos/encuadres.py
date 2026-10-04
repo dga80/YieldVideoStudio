@@ -114,8 +114,8 @@ ESCALERA = (
      "encuadre": ("a clean explanatory diagram filling the frame: simple flat "
                   "shapes, thick arrows and short labels laid out on a plain "
                   "graphic background, the idea drawn as a chart rather than a "
-                  "place, with small stick figures integrated as part of the "
-                  "diagram")},
+                  "place, with small figures integrated as part of the "
+                  "diagram in the video's art style")},
 
     {"id": "pantalla", "familia": "abstracta", "peso": 2, "abstracta": True,
      "nombre": "pantalla",

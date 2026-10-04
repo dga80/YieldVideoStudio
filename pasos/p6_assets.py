@@ -1916,8 +1916,8 @@ def _prompt_visual(escena, beat, catalogo):
             partes.append(beat["accion"])
         if escena.get("personajes"):
             partes.append("with " + _citar_reparto(escena["personajes"], catalogo)
-                + " drawn as the same stick-figure characters as the rest of "
-                  "the video, integrated into the composition")
+                + " drawn matching the visual style and character design of the "
+                  "rest of the video, integrated into the composition")
             partes.append(_expresion(_tono_de(escena, beat)))
         base = _con_narracion(
             _con_direccion(", ".join(x for x in partes if x), escena), escena)

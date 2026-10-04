@@ -50,7 +50,7 @@ def limpiar_y_condensar_prompt(raw_prompt):
             r'not a physical location:?\s*',
             r'a clean conceptual composition on a flat graphic backdrop,?\s*',
             r'in the exact same flat vector style as the rest of the video,?\s*',
-            r'with the group \'[^\']+\'(?:\s+and\s+the\s+group\s+\'[^\']+\')*\s+drawn as the same stick-figure characters as the rest of the video,?\s*',
+            r'with (?:the group|the character|\w+)[^,\.]*drawn (?:as the same stick-figure characters|matching the visual style)[^,\.]*,?\s*',
             r'integrated into the composition,?\s*',
             r'tense faces:[^,\.]*[,.]?\s*',
             r'tight straight mouth,?\s*',
