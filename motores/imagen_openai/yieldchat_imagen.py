@@ -30,6 +30,37 @@ RATIO_MAP = {
 }
 
 
+def extraer_guia_estilo(raw_prompt):
+    """Extrae el bloque de la guía de estilo si está presente en el prompt."""
+    m = re.search(r"Style guide, follow it to the letter:\s*(.*?)(?=\s*(?:Reference image|Todo prompt|HOW CHARACTERS|\Z))", raw_prompt, re.DOTALL | re.IGNORECASE)
+    return m.group(1).strip() if m else ""
+
+
+def detectar_tipo_estilo(raw_prompt):
+    """Determina si el estilo es 3D/fotorrealista, monigotes/stick, o 2D/ilustración.
+    
+    Analiza prioritariamente la guía de estilo del preset para no ser engañado
+    por palabras en directrices negativas (ej: 'devoid of visible line art')
+    o en descripciones de escenas secundarias.
+    """
+    guia = extraer_guia_estilo(raw_prompt)
+    analizar = guia if guia else raw_prompt
+
+    # 1. 3D / Fotorrealista / Robots Sci-Fi / CGI
+    if re.search(r"\b(3d\s+environment|photorealistic|3d\s+render|cgi|polished\s+chrome|sci-fi\s+robot|pbr\s+shading|complex\s+reflections|realistic\s+3d)\b", analizar, re.I):
+        return "3d"
+
+    # 2. Monigotes / Stick figure
+    if re.search(r"\b(stick[- ]figure|stickfigure|monigote|stick\s*man)\b", analizar, re.I):
+        return "stick"
+
+    # 3. 2D / Ilustración / Anime / Vector
+    if re.search(r"\b(2d\s+vector|anime|manga|comic|cartoon|flat\s+vector|line\s*art|drawing|illustration|sketch|whiteboard)\b", analizar, re.I):
+        return "2d"
+
+    return "general"
+
+
 def limpiar_y_condensar_prompt(raw_prompt):
     """Extrae el sujeto visual y el estilo esencial, descartando preámbulos extensos.
 
@@ -48,14 +79,15 @@ def limpiar_y_condensar_prompt(raw_prompt):
         res = m_scene.group(1).strip().replace("\n", " ")
         patterns_boilerplate = [
             r'not a physical location:?\s*',
-            r'a clean conceptual composition on a flat graphic backdrop,?\s*',
-            r'in the exact same flat vector style as the rest of the video,?\s*',
-            r'with (?:the group|the character|\w+)[^,\.]*drawn (?:as the same stick-figure characters|matching the visual style)[^,\.]*,?\s*',
+            r'a clean conceptual composition on (?:a flat graphic|a graphic|an empty)?\s*backdrop,?\s*',
+            r'in the exact same (?:flat vector )?style as the rest of the video,?\s*',
+            r'with (?:the group|the character|small figures|\w+)[^,\.]*drawn (?:as the same stick-figure characters|matching the visual style)[^,\.]*,?\s*',
             r'integrated into the composition,?\s*',
-            r'tense faces:[^,\.]*[,.]?\s*',
-            r'tight straight mouth,?\s*',
-            r'lowered drawn-together eyebrows,?\s*',
-            r'hard fixed stare,?\s*',
+            r'with small (?:stick )?figures integrated as part of the diagram[^,\.]*,?\s*',
+            r'(?:tense|neutral|solemn|happy|calm) faces:[^,\.]*[,.]?\s*',
+            r'(?:straight closed|tight straight|closed level) mouth,?\s*',
+            r'(?:level|lowered drawn-together|still) eyebrows,?\s*',
+            r'(?:calm|hard fixed|steady downward) gaze,?\s*',
             r'No smiling\.?\s*',
             r'\(TONO:[^\)]+\)\s*',
         ]
@@ -63,6 +95,10 @@ def limpiar_y_condensar_prompt(raw_prompt):
             res = re.sub(pat, '', res, flags=re.IGNORECASE)
         res = re.sub(r'^\s*[,.\s]+', '', res)
         res = re.sub(r'\s+', ' ', res).strip()
+        tipo = detectar_tipo_estilo(raw_prompt)
+        if tipo == "3d":
+            res = re.sub(r'\b(stick[- ]figures|monigotes)\b', 'figures', res, flags=re.IGNORECASE)
+            res = re.sub(r'\b(stick[- ]figure|monigote|stick\s*man)\b', 'figure', res, flags=re.IGNORECASE)
         subparts = [p.strip() for p in res.split(".") if p.strip()]
         escena = ". ".join(subparts[:2])
     else:
@@ -72,9 +108,16 @@ def limpiar_y_condensar_prompt(raw_prompt):
     m_sujeto = re.search(r"\b(A single character[^\.\n]+|Three ordinary people[^\.\n]+|A wide shot[^\.\n]+|A wide exterior[^\.\n]+|A close-up of[^\.\n]+|A simple schematic[^\.\n]+)", texto, re.I)
     sujeto = m_sujeto.group(1).strip() if m_sujeto else ""
 
-    # 4. Extraer palabras clave de estilo
-    m_estilo = re.search(r"\b(minimalist\s+2D[^\.\n]+|stick[- ]figure[^\.\n]+|flat\s+vector[^\.\n]+|anime[^\.\n]+|cartoon[^\.\n]+|comic\s+book[^\.\n]+|watercolor[^\.\n]+|line\s*art[^\.\n]+)", texto, re.I)
-    estilo_clave = m_estilo.group(1).strip() if m_estilo else ""
+    # 4. Extraer estilo esencial coherente con el tipo de estilo detectado
+    tipo = detectar_tipo_estilo(raw_prompt)
+    if tipo == "3d":
+        estilo_clave = "photorealistic 3D, chrome robot panels, glowing cyan details"
+    elif tipo == "stick":
+        estilo_clave = "minimalist 2D stick figure cartoon"
+    elif tipo == "2d":
+        estilo_clave = "2D vector animation style, clean line art"
+    else:
+        estilo_clave = ""
 
     partes = []
     if correccion:
@@ -111,23 +154,14 @@ def limpiar_y_condensar_prompt(raw_prompt):
 
 def enriquecer_prompt(raw_prompt, tamano="apaisado"):
     limpio = limpiar_y_condensar_prompt(raw_prompt)
+    tipo = detectar_tipo_estilo(raw_prompt)
     partes = [limpio]
 
-    # Detectar si el estilo pide monigotes / stick-figures
-    es_stick = bool(re.search(
-        r"\b(stick[- ]figure|stickfigure|monigote|stick\s*man)\b",
-        raw_prompt, re.I
-    ))
-
-    # Detectar si el estilo pide 2D / animación / ilustración plana
-    es_2d = bool(re.search(
-        r"\b(2d|flat|vector|minimalist|cartoon|anime|line\s*art|drawing|illustration|sketch|stick\s*figure|whiteboard|comic|dibujo)\b",
-        raw_prompt, re.I
-    ))
-
-    if es_stick:
+    if tipo == "3d":
+        partes.append("photorealistic 3D environment, complex reflections, PBR shading, cinematic lighting, sharp focus, 8k resolution")
+    elif tipo == "stick":
         partes.append("minimalist 2D stick figure cartoon, clean black pen line art on pure white paper, simple stick figures with circular heads, 2D vector style")
-    elif es_2d:
+    elif tipo == "2d":
         partes.append("clean line art, 2D vector animation style, high quality illustration")
     else:
         if tamano in ("apaisado", "16:9"):
@@ -197,10 +231,8 @@ def _crear_lienzo_cinematografico(prompt, width, height):
     img = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(img)
 
-    es_2d = bool(re.search(
-        r"\b(2d|flat|vector|minimalist|cartoon|anime|line\s*art|drawing|illustration|sketch|stick\s*figure|whiteboard|comic|dibujo)\b",
-        prompt, re.I
-    ))
+    tipo = detectar_tipo_estilo(prompt)
+    es_2d = tipo in ("2d", "stick")
 
     if es_2d:
         # Fondo blanco limpio para estilos de animación 2D / monigotes

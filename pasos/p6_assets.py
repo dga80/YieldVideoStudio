@@ -1889,8 +1889,8 @@ def _prompt_visual(escena, beat, catalogo):
         # base es conceptual, la accion del tramo aporta el contenido y los
         # personajes siguen siendo los monigotes del estilo del video.
         partes = ["not a physical location: a clean conceptual composition on "
-                  "a flat graphic backdrop, in the exact same flat vector style "
-                  "as the rest of the video"]
+                  "a graphic backdrop, matching the visual style of the "
+                  "rest of the video"]
     # LA ACCION DEL TRAMO SOLO MANDA SI ESTE PLANO NO TIENE LA SUYA.
     #
     # Aqui estaba la raiz de los dos fallos que se veian en el video montado.
@@ -2435,8 +2435,8 @@ def frase_de_referencia(indice, ref):
             lineas.append(
                 f"Reference image {indice} is the REAL logo of "
                 f"{nombre or 'the brand named in this shot'}. Redraw it in "
-                f"the flat vector style of this production -- same line "
-                f"weight, same palette discipline -- but keep its actual "
+                f"the visual style of this production -- matching line "
+                f"weight, rendering and palette discipline -- but keep its actual "
                 f"shape, its actual symbol and its actual proportions, so "
                 f"that a viewer recognises the real brand. Text is rare in "
                 f"this production, but this logo is asked for: if it "
@@ -2451,8 +2451,8 @@ def frase_de_referencia(indice, ref):
                   "what you draw is recognisably THAT one and not a generic "
                   "example: keep its real shape, its real proportions, its "
                   "landmark details and its real colours. Do NOT copy its "
-                  "rendering -- it is a photo and this must stay flat vector "
-                  "cartoon exactly as described above -- and ignore its "
+                  "rendering -- it is a photo and this must match the visual "
+                  "style described above -- and ignore its "
                   "lighting, texture, depth of field, grain and grading.")
     elif ref["papel"] == "rechazada":
         # LA IMAGEN QUE SE RECHAZO, y va con la instruccion CONTRARIA a la
