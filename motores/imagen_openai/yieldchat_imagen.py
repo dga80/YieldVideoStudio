@@ -18,6 +18,7 @@ import urllib.parse
 import urllib.request
 import json
 import threading
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 RATIO_MAP = {
@@ -51,7 +52,7 @@ def detectar_tipo_estilo(raw_prompt):
         return "3d"
 
     # 2. Monigotes / Stick figure
-    if re.search(r"\b(stick[- ]figure|stickfigure|monigote|stick\s*man)\b", analizar, re.I):
+    if re.search(r"\b(stick[- ]figures?|stickfigure|monigote|stick\s*man|cartoon[-_ ]stick)\b", analizar, re.I):
         return "stick"
 
     # 3. 2D / Ilustración / Anime / Vector
@@ -61,14 +62,43 @@ def detectar_tipo_estilo(raw_prompt):
     return "general"
 
 
-def limpiar_y_condensar_prompt(raw_prompt):
-    """Extrae el sujeto visual y el estilo esencial, descartando preámbulos extensos.
+def guardar_en_cache_seguro(png_bytes: bytes, ruta_destino: str, meta: dict = None) -> bool:
+    """Bloquea lienzos de emergencia o imágenes corruptas para evitar contaminar banco/imagenes."""
+    if not png_bytes or len(png_bytes) < 2048:
+        return False
+    if meta and meta.get("es_lienzo_emergencia"):
+        return False
 
-    Pollinations y APIs externas fallan con HTTP 402/414 si la URL excede 1000 caracteres.
-    Condensar a < 280 caracteres garantiza respuestas rápidas, estables y fieles.
-    """
+    try:
+        im = Image.open(io.BytesIO(png_bytes))
+        w, h = im.size
+        # Validar tamaño y firma de borde dorado (212, 175, 55)
+        arr = np.array(im.convert("RGBA"))
+        if w > 48 and h > 48:
+            border_px = arr[24, 24:w-24, :3]
+            gold = np.array([212, 175, 55])
+            diffs = np.linalg.norm(border_px - gold, axis=1)
+            if np.mean(diffs < 60) > 0.3:
+                return False
+
+        # Validar varianza cromática (lienzo ciego)
+        arr_gray = np.array(im.convert("L"))
+        if float(np.var(arr_gray)) < 5.0:
+            return False
+
+        os.makedirs(os.path.dirname(os.path.abspath(ruta_destino)), exist_ok=True)
+        with open(ruta_destino, "wb") as fh:
+            fh.write(png_bytes)
+        return True
+    except Exception:
+        return False
+
+
+def limpiar_y_condensar_prompt(raw_prompt):
+    """Limpia el prompt eliminando directivas conversacionales sin truncar a 280 caracteres."""
     texto = raw_prompt.strip()
 
+    # Si ya es un prompt modular o directo, preservarlo limpiando espacios
     # 1. Si hay corrección explícita, tiene prioridad
     m_corr = re.search(r"Correction,\s*this takes priority:\s*([^\.\n]+)", texto, re.I)
     correccion = m_corr.group(1).strip() if m_corr else ""
@@ -84,40 +114,19 @@ def limpiar_y_condensar_prompt(raw_prompt):
             r'with (?:the group|the character|small figures|\w+)[^,\.]*drawn (?:as the same stick-figure characters|matching the visual style)[^,\.]*,?\s*',
             r'integrated into the composition,?\s*',
             r'with small (?:stick )?figures integrated as part of the diagram[^,\.]*,?\s*',
-            r'(?:tense|neutral|solemn|happy|calm) faces:[^,\.]*[,.]?\s*',
-            r'(?:straight closed|tight straight|closed level) mouth,?\s*',
-            r'(?:level|lowered drawn-together|still) eyebrows,?\s*',
-            r'(?:calm|hard fixed|steady downward) gaze,?\s*',
-            r'No smiling\.?\s*',
             r'\(TONO:[^\)]+\)\s*',
         ]
         for pat in patterns_boilerplate:
             res = re.sub(pat, '', res, flags=re.IGNORECASE)
         res = re.sub(r'^\s*[,.\s]+', '', res)
         res = re.sub(r'\s+', ' ', res).strip()
-        tipo = detectar_tipo_estilo(raw_prompt)
-        if tipo == "3d":
-            res = re.sub(r'\b(stick[- ]figures|monigotes)\b', 'figures', res, flags=re.IGNORECASE)
-            res = re.sub(r'\b(stick[- ]figure|monigote|stick\s*man)\b', 'figure', res, flags=re.IGNORECASE)
-        subparts = [p.strip() for p in res.split(".") if p.strip()]
-        escena = ". ".join(subparts[:2])
+        escena = res
     else:
         escena = ""
 
     # 3. Detectar si hay prompt de eje o sujeto principal
     m_sujeto = re.search(r"\b(A single character[^\.\n]+|Three ordinary people[^\.\n]+|A wide shot[^\.\n]+|A wide exterior[^\.\n]+|A close-up of[^\.\n]+|A simple schematic[^\.\n]+)", texto, re.I)
     sujeto = m_sujeto.group(1).strip() if m_sujeto else ""
-
-    # 4. Extraer estilo esencial coherente con el tipo de estilo detectado
-    tipo = detectar_tipo_estilo(raw_prompt)
-    if tipo == "3d":
-        estilo_clave = "photorealistic 3D, chrome robot panels, glowing cyan details"
-    elif tipo == "stick":
-        estilo_clave = "minimalist 2D stick figure cartoon"
-    elif tipo == "2d":
-        estilo_clave = "2D vector animation style, clean line art"
-    else:
-        estilo_clave = ""
 
     partes = []
     if correccion:
@@ -126,8 +135,6 @@ def limpiar_y_condensar_prompt(raw_prompt):
         partes.append(escena)
     if sujeto and sujeto not in escena:
         partes.append(sujeto)
-    if estilo_clave and estilo_clave not in escena and estilo_clave not in sujeto:
-        partes.append(estilo_clave)
 
     if not partes:
         lineas = []
@@ -142,35 +149,33 @@ def limpiar_y_condensar_prompt(raw_prompt):
                 continue
             lineas.append(l_limpia)
         if lineas:
-            partes.append(" ".join(lineas[:2]))
+            partes.append(". ".join(lineas))
         else:
-            partes.append(texto[:200])
+            partes.append(texto)
 
     prompt_resumen = ", ".join(partes)
-    if len(prompt_resumen) > 280:
-        prompt_resumen = prompt_resumen[:277] + "..."
-    return prompt_resumen
+    return prompt_resumen.strip()
 
 
 def enriquecer_prompt(raw_prompt, tamano="apaisado"):
+    """Enriquece el prompt respetando su contenido y asegurando las anclas de estilo visual requeridas."""
     limpio = limpiar_y_condensar_prompt(raw_prompt)
+
+    # Si el prompt ya es modular de 5 ranuras (trae [STYLE DNA] denso en inglés), no alterar
+    if any(k in limpio.lower() for k in ("vector illustration", "stick figure", "flat digital gouache", "cel shading")):
+        return limpio
+
     tipo = detectar_tipo_estilo(raw_prompt)
-    partes = [limpio]
+    partes = []
 
-    if tipo == "3d":
-        partes.append("photorealistic 3D environment, complex reflections, PBR shading, cinematic lighting, sharp focus, 8k resolution")
-    elif tipo == "stick":
-        partes.append("minimalist 2D stick figure cartoon, clean black pen line art on pure white paper, simple stick figures with circular heads, 2D vector style")
+    if tipo == "stick":
+        partes.append("2D minimalist stick figure cartoon, solid black stick figures, clean vector art, simple cel shading")
     elif tipo == "2d":
-        partes.append("clean line art, 2D vector animation style, high quality illustration")
-    else:
-        if tamano in ("apaisado", "16:9"):
-            partes.append("cinematic lighting, YouTube composition, sharp focus, high resolution")
-        elif tamano in ("vertical", "9:16"):
-            partes.append("vertical composition, dramatic lighting, detailed")
-        else:
-            partes.append("studio lighting, sharp subject, high resolution")
+        partes.append("clean 2D vector animation style, flat digital art")
+    elif tipo == "3d":
+        partes.append("photorealistic 3D environment, cinematic lighting, 8k resolution")
 
+    partes.append(limpio)
     return ", ".join(partes)
 
 
@@ -403,7 +408,8 @@ def _intentar_generar_agnes(prompt, width, height, tamano="apaisado"):
     payload = {
         "model": "agnes-image-2.1-flash",
         "prompt": prompt_completo,
-        "size": img_size
+        "size": img_size,
+        "response_format": "b64_json"
     }
 
     try:

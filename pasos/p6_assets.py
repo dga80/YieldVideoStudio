@@ -2558,6 +2558,98 @@ def _ultima_palabra_idioma(idioma):
             f"names and titles of real works.")
 
 
+def construir_prompt_modular(
+    escena: dict,
+    adn_estilo: dict = None,
+    anclas_personajes: list = None,
+    encuadre: str = None,
+    feedback: str = None,
+    negativo_usuario: str = None
+) -> tuple[str, str]:
+    """Sintetiza un prompt modular en inglés de 5 ranuras (<250 tokens, <1000 chars)
+
+    Ranuras:
+    1. [STYLE DNA]: Descriptor técnico textual extraído de lámina/preset.
+    2. [SCENE / ACTION / FRAMING]: Encuadre y acción sin reglas en español ni referencias fantasma.
+    3. [CHARACTER ANCHORS]: Rasgos físicos y vestimenta inmutables del reparto presente.
+    4. [LIGHTING]: Iluminación mandatoria coherente.
+    5. [NEGATIVE PROMPT]: Prohibiciones globales y específicas canalizadas de forma aislada.
+    """
+    adn = adn_estilo or {
+        "dna_block": "clean 2D vector animation, flat digital gouache style",
+        "lighting_style": "ambient diffuse daylight",
+        "negative_style": "3D render, photorealistic, harsh gradients, glossy reflection"
+    }
+
+    # 1. Purgar metarreglas en español y directivas conversacionales
+    raw_scene = escena.get("prompt") or escena.get("descripcion") or ""
+    cleaned_scene = re.sub(
+        r"\b(reglas\.json|reglas de la casa|genera una|ilustracion|no incluyas texto|todo prompt|how characters)\b.*",
+        "", raw_scene, flags=re.I
+    ).strip()
+
+    # 2. Eliminar referencias fantasma ("Reference image 1", "Ref 1", etc.)
+    cleaned_scene = re.sub(r"Reference\s+image\s+\d+", "", cleaned_scene, flags=re.I)
+    cleaned_scene = re.sub(r"reference\s+images\s+\d+\s+to\s+\d+", "", cleaned_scene, flags=re.I)
+    cleaned_scene = re.sub(r"\bRef\s*\d+\b", "", cleaned_scene, flags=re.I)
+    cleaned_scene = re.sub(r",\s*,+", ",", cleaned_scene)
+    cleaned_scene = " ".join(cleaned_scene.split()).strip(",. ")
+
+    # Slot 1: [STYLE DNA]
+    slot_style = adn.get("dna_block", "").strip()
+
+    # Slot 2: [SCENE / ACTION / FRAMING]
+    shot_text = ""
+    if encuadre:
+        try:
+            import pasos.encuadres as enc_mod
+            if hasattr(enc_mod, "POR_ID") and encuadre in enc_mod.POR_ID:
+                shot_text = enc_mod.POR_ID[encuadre]["encuadre"]
+            else:
+                shot_text = f"{encuadre} shot"
+        except Exception:
+            shot_text = f"{encuadre} shot"
+    slot_scene = f"{shot_text}. {cleaned_scene}".strip(". ")
+
+    # Slot 3: [CHARACTER ANCHORS]
+    slot_chars = ""
+    if anclas_personajes:
+        anchors = []
+        for c in anclas_personajes:
+            if isinstance(c, dict) and c.get("anchors_block"):
+                anchors.append(c["anchors_block"])
+            elif isinstance(c, str):
+                anchors.append(c)
+        if anchors:
+            slot_chars = "; ".join(anchors)
+
+    # Slot 4: [LIGHTING]
+    lighting_text = escena.get("luz") or adn.get("lighting_style") or "diffuse ambient daylight"
+    slot_lighting = f"Lighting: {lighting_text}".strip()
+
+    # Combinar slots positivos
+    parts = [p for p in [slot_style, slot_scene, slot_chars, slot_lighting] if p]
+    if feedback:
+        parts.append(f"Correction: {feedback.strip()}")
+
+    positive_prompt = ". ".join(parts).strip()
+    positive_prompt = re.sub(r"\s+", " ", positive_prompt)
+    positive_prompt = re.sub(r"\.\s*\.", ".", positive_prompt)
+
+    # Límite estricto de longitud (<1000 caracteres)
+    if len(positive_prompt) > 990:
+        positive_prompt = positive_prompt[:980].rsplit(" ", 1)[0] + "."
+
+    # Slot 5: [NEGATIVE PROMPT]
+    negatives = [adn.get("negative_style", "3D render, photorealistic, harsh gradients")]
+    negatives.append("watermarks, text, blurry, distorted anatomy, extra limbs")
+    if negativo_usuario:
+        negatives.append(negativo_usuario.strip())
+    negative_prompt = ", ".join(dict.fromkeys(", ".join(negatives).split(", ")))
+
+    return positive_prompt, negative_prompt
+
+
 def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
                      formato="", fichas_reparto=None):
     """Prompt final citando cada referencia por su posicion, como espera la API.
