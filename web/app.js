@@ -5852,8 +5852,11 @@ async function duplicarEstiloLight(ficha) {
    está tomada. */
 function elegirEstiloLight(ficha) {
   localStorage.setItem('estudio.light.estilo', ficha.id);
-  // se empieza en el ENCARGO: elegir un estilo es el principio de un vídeo
-  // nuevo. Si había uno a medias, la propia pantalla lo ofrece.
+  // se empieza en el ENCARGO: elegir un estilo es el principio de un vídeo nuevo.
+  recordarVideoLight('');
+  APP.light.video.pid = '';
+  APP.light.video.fichas = null;
+  APP.light.video.encargo = null;
   APP.light.video.vista = 'encargo';
   irALight('elegido', { abierto: ficha.id });
 }
@@ -5864,7 +5867,6 @@ function estiloElegido() {
 
 /* Modal interactivo para crear nuevo vídeo escogiendo estilo */
 function iniciarCreacionVideo() {
-  if (APP.modo !== 'light') conmutarModoLight(true);
   abrirModalSeleccionarEstilo();
 }
 
@@ -5879,8 +5881,13 @@ function cerrarModalSeleccionarEstilo() {
   }
 }
 
-function abrirModalSeleccionarEstilo() {
+async function abrirModalSeleccionarEstilo() {
   cerrarModalSeleccionarEstilo();
+
+  if (!APP.light.datos && !APP.light.cargando) {
+    try { await cargarGaleriaLight(true); } catch (_) {}
+  }
+
   const fichas = presetsLight();
 
   const cabecera = h('div', { clase: 'modal-cab' },
@@ -5911,18 +5918,18 @@ function abrirModalSeleccionarEstilo() {
       }, '✨ Crear mi primer estilo')
     ));
   } else {
-    const rejilla = h('div', { clase: 'selector-modal-estilos' });
+    const rejilla = h('div', { clase: 'galeria-estilos selector-modal-estilos' });
     fichas.forEach(ficha => {
       const vinetas = ficha.vinetas || [];
-      const card = h('div', {
-        clase: 'ficha-estilo',
-        estilo: 'cursor:pointer;border-radius:10px;overflow:hidden;',
-        onclick: () => {
-          cerrarModalSeleccionarEstilo();
-          elegirEstiloLight(ficha);
+      const card = h('div', { clase: 'ficha-estilo' },
+        h('button', {
+          clase: 'cara-y-cuerpo',
+          title: `Crear vídeo con el estilo «${ficha.nombre || ficha.id}»`,
+          onclick: () => {
+            cerrarModalSeleccionarEstilo();
+            elegirEstiloLight(ficha);
+          },
         },
-      },
-        h('div', { clase: 'cara-y-cuerpo' },
           h('div', { clase: 'cara' }, ficha.hay_miniatura
             ? h('img', { src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '', loading: 'lazy' })
             : h('div', { clase: 'sin-cara' }, 'sin muestras')),
@@ -5932,7 +5939,7 @@ function abrirModalSeleccionarEstilo() {
               ...vinetas.slice(0, 3).map(v => h('li', {},
                 h('span', { clase: 'ico' }, v.icono || '·'), v.texto || v))),
             h('div', { clase: 'pie-tarjeta-estilo' },
-              h('span', { clase: 'tag-crear-video' }, '🎬 Seleccionar este estilo'))
+              h('span', { clase: 'tag-crear-video primario' }, '🎬 Elegir este estilo'))
           )
         )
       );
@@ -5947,9 +5954,10 @@ function abrirModalSeleccionarEstilo() {
         irALight('crear');
       },
     },
-      h('span', { clase: 'mas' }, '+'),
-      h('span', { clase: 'titulo' }, 'Crear estilo nuevo'),
-      h('span', { clase: 'pista' }, 'Define una nueva estética')));
+      h('div', { clase: 'cara' }, h('span', { clase: 'mas' }, '+')),
+      h('div', { clase: 'cuerpo' },
+        h('div', { clase: 'nombre' }, 'Crear estilo nuevo'),
+        h('div', { clase: 'pista' }, 'Define una nueva estética'))));
 
     cuerpoModal.appendChild(rejilla);
   }
