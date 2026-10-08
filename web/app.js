@@ -5810,11 +5810,12 @@ async function descartarTallerLight(taller) {
    es HTML válido y el clic acabaría eligiendo el estilo— y por eso la tarjeta es
    un div con un botón grande dentro. */
 function menuDeEstilo(ficha) {
+  const cerrar = () => menu.classList.add('plegado');
   const menu = h('div', { clase: 'menu-estilo plegado' },
-    h('button', { clase: 'mini primario', onclick: () => elegirEstiloLight(ficha) }, '🎬 Crear vídeo'),
-    h('button', { clase: 'mini fantasma', onclick: () => editarEstiloLight(ficha) }, '✏️ Editar estilo'),
-    h('button', { clase: 'mini fantasma', onclick: () => duplicarEstiloLight(ficha) }, '⧉ Duplicar'),
-    h('button', { clase: 'mini peligro', onclick: () => borrarPresetLight(ficha) }, '🗑️ Eliminar estilo'));
+    h('button', { clase: 'mini primario', onclick: () => { cerrar(); elegirEstiloLight(ficha); } }, '🎬 Crear vídeo'),
+    h('button', { clase: 'mini fantasma', onclick: () => { cerrar(); editarEstiloLight(ficha); } }, '✏️ Editar estilo'),
+    h('button', { clase: 'mini fantasma', onclick: () => { cerrar(); duplicarEstiloLight(ficha); } }, '⧉ Duplicar'),
+    h('button', { clase: 'mini fantasma peligro', onclick: () => { cerrar(); borrarPresetLight(ficha); } }, '🗑️ Eliminar estilo'));
   const puntos = h('button', {
     clase: 'puntos', title: 'Más opciones de estilo',
     onclick: ev => {
