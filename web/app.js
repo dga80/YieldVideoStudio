@@ -4492,8 +4492,8 @@ function conmutarMenuProyectos() {
       'no hay ningún proyecto'));
   }
   menu.appendChild(h('div', { clase: 'pie-menu' },
-    h('button', { clase: 'mini', onclick: () => { cerrarMenuProyectos(); nuevoProyecto(); } },
-      '+ nuevo'),
+    h('button', { clase: 'mini primario', onclick: () => { cerrarMenuProyectos(); iniciarCreacionVideo(); } },
+      '🎬 + Crear nuevo vídeo'),
     h('button', { clase: 'mini fantasma', onclick: () => { cerrarMenuProyectos(); abrirPapelera(); } },
       'Papelera'),
     h('span', { clase: 'crece' }),
@@ -4921,6 +4921,11 @@ function arrancar() {
     if (!COSTE.abierto) return;
     if ($('#coste').contains(ev.target) || $('#coste-detalle').contains(ev.target)) return;
     conmutarCoste();
+  });
+  document.addEventListener('click', ev => {
+    if (!ev.target.closest('.menu-estilo') && !ev.target.closest('.puntos')) {
+      document.querySelectorAll('.menu-estilo').forEach(m => m.classList.add('plegado'));
+    }
   });
   /* Con el dedo, acertar una casilla de 22px es una loteria. El texto de al
      lado hace de mando: en '.campo.plano' la etiqueta va suelta (ni envuelve al
@@ -5622,26 +5627,35 @@ function irALight(vista, extra) {
 function vistaGaleriaLight() {
   const caja = h('div', {});
   const fichas = presetsLight();
-  caja.appendChild(h('div', { clase: 'light-cab' },
+  caja.appendChild(h('div', { clase: 'light-cab galeria-hero' },
     h('h2', {}, 'Tus estilos'),
     h('span', { clase: 'meta' }, fichas.length
       ? `${fichas.length} estilo${fichas.length === 1 ? '' : 's'}`
-      : 'una estética, un tono, una voz y un idioma')));
+      : 'una estética, un tono, una voz y un idioma'),
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'primario boton-crear-video-hero',
+      title: 'Crear un nuevo vídeo eligiendo el estilo',
+      onclick: () => iniciarCreacionVideo(),
+    }, '🎬 + Crear nuevo vídeo')));
 
   const rejilla = h('div', { clase: 'galeria-estilos' });
   fichas.forEach(ficha => rejilla.appendChild(tarjetaEstiloLight(ficha)));
   rejilla.appendChild(tarjetaNuevoEstilo(fichas.length));
   caja.appendChild(rejilla);
 
-  /* TUS VÍDEOS, debajo de los estilos. Aquí es donde se aterriza al volver —de
-     una recarga, del móvil, de otro día— y sin esta lista un vídeo a medio
-     generar no tenía desde dónde retomarse: seguía corriendo en el servidor y
-     no había ningún camino hasta él. */
+  /* TUS VÍDEOS, debajo de los estilos. */
   const videos = videosLight();
   if (videos.length) {
-    caja.appendChild(h('div', { clase: 'light-cab' },
+    caja.appendChild(h('div', { clase: 'light-cab', estilo: 'margin-top:28px' },
       h('h2', {}, 'Tus vídeos'),
-      h('span', { clase: 'meta' }, `${videos.length} con este modo`)));
+      h('span', { clase: 'meta' }, `${videos.length} con este modo`),
+      h('span', { clase: 'crece' }),
+      h('button', {
+        clase: 'mini primario',
+        title: 'Crear otro vídeo eligiendo estilo',
+        onclick: () => iniciarCreacionVideo(),
+      }, '+ Crear nuevo vídeo')));
     const lista = h('div', { clase: 'videos-light' });
     videos.forEach(video => lista.appendChild(h('div', { clase: 'video-light' },
       h('button', {
@@ -5650,10 +5664,6 @@ function vistaGaleriaLight() {
       },
         h('span', { clase: 'nombre' }, video.nombre || video.id),
         h('span', { clase: 'meta' }, fechaCorta(video.actualizado) || '')),
-      /* EL LAPIZ VA FUERA DEL BOTON DE ABRIR. Un boton dentro de otro no es
-         HTML valido y el clic acabaria abriendo el video en vez de renombrarlo
-         — la misma razon por la que la tarjeta de un estilo es un div con un
-         boton grande dentro y no un boton entero. */
       h('button', {
         clase: 'mini fantasma renombrar', title: 'Cambiar el nombre',
         'aria-label': `Cambiar el nombre de ${video.nombre || video.id}`,
@@ -5664,13 +5674,22 @@ function vistaGaleriaLight() {
         onclick: () => apartarVideoLight(video),
       }, 'Apartar'))));
     caja.appendChild(lista);
+  } else if (fichas.length) {
+    caja.appendChild(h('div', {
+      clase: 'caja-info bienvenida-crear-video',
+      estilo: 'margin-top:28px;display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap',
+    },
+      h('div', {},
+        h('b', { estilo: 'font-size:15px;display:block;margin-bottom:3px' }, '¿Listo para crear un nuevo vídeo?'),
+        h('div', { clase: 'pista' }, 'Haz clic en «Crear nuevo vídeo» o elige directamente cualquiera de tus estilos arriba.')),
+      h('button', {
+        clase: 'primario',
+        onclick: () => iniciarCreacionVideo(),
+      }, '🎬 Crear nuevo vídeo')
+    ));
   }
 
-  /* LOS INTENTOS A MEDIAS. Un taller nace antes que su estilo, así que una
-     generación que falla deja una carpeta de cientos de megas sin nadie que la
-     borre. En vez de barrerla sola por reloj —borrar por su cuenta lo que quizá
-     ibas a retomar— se enseña con sus dos salidas. Misma regla que la papelera:
-     nada se pierde sin que alguien lo diga. */
+  /* LOS INTENTOS A MEDIAS. */
   const sueltos = (APP.light.datos || {}).sueltos || [];
   if (sueltos.length) {
     const aviso = h('div', { clase: 'sueltos' },
@@ -5694,14 +5713,12 @@ function vistaGaleriaLight() {
   return caja;
 }
 
-/* PULSAR UNA TARJETA LA ELIGE Y PASA AL SIGUIENTE PASO, no la abre. Lo que se
-   hace con un estilo el 95 % de las veces es usarlo para un vídeo; editarlo es
-   lo raro, y por eso vive en el menú de los tres puntos junto a duplicarlo. */
+/* PULSAR UNA TARJETA LA ELIGE Y PASA AL SIGUIENTE PASO */
 function tarjetaEstiloLight(ficha) {
   const vinetas = ficha.vinetas || [];
   return h('div', { clase: 'ficha-estilo' },
     h('button', {
-      clase: 'cara-y-cuerpo', title: 'Usar este estilo',
+      clase: 'cara-y-cuerpo', title: `Crear vídeo con el estilo «${ficha.nombre || ficha.id}»`,
       onclick: () => elegirEstiloLight(ficha),
     },
       h('div', { clase: 'cara' }, ficha.hay_miniatura
@@ -5710,11 +5727,10 @@ function tarjetaEstiloLight(ficha) {
       h('div', { clase: 'cuerpo' },
         h('div', { clase: 'nombre' }, ficha.nombre || ficha.id),
         h('ul', { clase: 'vinetas' },
-          // el icono lo manda el servidor con cada línea (`presets_canal.vinetas_de`):
-          // aquí no hay forma de saber cuál es el idioma y cuál la voz sin deducirlo
-          // del orden, y el orden se rompe en cuanto una línea no sale
           ...vinetas.map(v => h('li', {},
-            h('span', { clase: 'ico' }, v.icono || '·'), v.texto || v))))),
+            h('span', { clase: 'ico' }, v.icono || '·'), v.texto || v))),
+        h('div', { clase: 'pie-tarjeta-estilo' },
+          h('span', { clase: 'tag-crear-video' }, '🎬 Usar este estilo')))),
     menuDeEstilo(ficha));
 }
 
@@ -5795,10 +5811,12 @@ async function descartarTallerLight(taller) {
    un div con un botón grande dentro. */
 function menuDeEstilo(ficha) {
   const menu = h('div', { clase: 'menu-estilo plegado' },
-    h('button', { clase: 'mini fantasma', onclick: () => editarEstiloLight(ficha) }, 'Editar'),
-    h('button', { clase: 'mini fantasma', onclick: () => duplicarEstiloLight(ficha) }, 'Duplicar'));
+    h('button', { clase: 'mini primario', onclick: () => elegirEstiloLight(ficha) }, '🎬 Crear vídeo'),
+    h('button', { clase: 'mini fantasma', onclick: () => editarEstiloLight(ficha) }, '✏️ Editar estilo'),
+    h('button', { clase: 'mini fantasma', onclick: () => duplicarEstiloLight(ficha) }, '⧉ Duplicar'),
+    h('button', { clase: 'mini peligro', onclick: () => borrarPresetLight(ficha) }, '🗑️ Eliminar estilo'));
   const puntos = h('button', {
-    clase: 'puntos', title: 'Más opciones',
+    clase: 'puntos', title: 'Más opciones de estilo',
     onclick: ev => {
       ev.stopPropagation();
       const abierto = menu.classList.contains('plegado');
@@ -5841,6 +5859,117 @@ function elegirEstiloLight(ficha) {
 
 function estiloElegido() {
   return fichaLight(localStorage.getItem('estudio.light.estilo'));
+}
+
+/* Modal interactivo para crear nuevo vídeo escogiendo estilo */
+function iniciarCreacionVideo() {
+  if (APP.modo !== 'light') conmutarModoLight(true);
+  abrirModalSeleccionarEstilo();
+}
+
+let _escuchaEscapeModalEstilo = null;
+
+function cerrarModalSeleccionarEstilo() {
+  const velo = document.getElementById('modal-elegir-estilo');
+  if (velo) velo.remove();
+  if (_escuchaEscapeModalEstilo) {
+    window.removeEventListener('keydown', _escuchaEscapeModalEstilo);
+    _escuchaEscapeModalEstilo = null;
+  }
+}
+
+function abrirModalSeleccionarEstilo() {
+  cerrarModalSeleccionarEstilo();
+  const fichas = presetsLight();
+
+  const cabecera = h('div', { clase: 'modal-cab' },
+    h('div', {},
+      h('div', { clase: 'paso-de' }, 'Paso 1 de 2 · Identidad visual'),
+      h('h2', { estilo: 'margin:2px 0 4px;font-size:18px' }, 'Elige el estilo de tu nuevo vídeo'),
+      h('p', { clase: 'pista', estilo: 'margin:0' },
+        'Cada estilo define la estética visual, la voz, el tono narrativo y el formato.')),
+    h('button', {
+      clase: 'mini fantasma cerrar',
+      title: 'Cerrar selector (Esc)',
+      onclick: cerrarModalSeleccionarEstilo,
+    }, '✕'));
+
+  const cuerpoModal = h('div', {});
+
+  if (!fichas.length) {
+    cuerpoModal.appendChild(h('div', { clase: 'caja-info', estilo: 'margin:20px 0;text-align:center;padding:24px' },
+      h('p', { estilo: 'font-size:15px;margin-bottom:12px' }, 'Aún no tienes ningún estilo guardado.'),
+      h('p', { clase: 'pista', estilo: 'margin-bottom:18px' },
+        'Crea tu primer estilo subiendo muestras visuales, configurando la voz y definiendo tu formato.'),
+      h('button', {
+        clase: 'primario',
+        onclick: () => {
+          cerrarModalSeleccionarEstilo();
+          irALight('crear');
+        },
+      }, '✨ Crear mi primer estilo')
+    ));
+  } else {
+    const rejilla = h('div', { clase: 'selector-modal-estilos' });
+    fichas.forEach(ficha => {
+      const vinetas = ficha.vinetas || [];
+      const card = h('div', {
+        clase: 'ficha-estilo',
+        estilo: 'cursor:pointer;border-radius:10px;overflow:hidden;',
+        onclick: () => {
+          cerrarModalSeleccionarEstilo();
+          elegirEstiloLight(ficha);
+        },
+      },
+        h('div', { clase: 'cara-y-cuerpo' },
+          h('div', { clase: 'cara' }, ficha.hay_miniatura
+            ? h('img', { src: API.presetCanalMiniatura(ficha.id, ficha.modificado), alt: '', loading: 'lazy' })
+            : h('div', { clase: 'sin-cara' }, 'sin muestras')),
+          h('div', { clase: 'cuerpo' },
+            h('div', { clase: 'nombre', estilo: 'font-weight:600' }, ficha.nombre || ficha.id),
+            h('ul', { clase: 'vinetas' },
+              ...vinetas.slice(0, 3).map(v => h('li', {},
+                h('span', { clase: 'ico' }, v.icono || '·'), v.texto || v))),
+            h('div', { clase: 'pie-tarjeta-estilo' },
+              h('span', { clase: 'tag-crear-video' }, '🎬 Seleccionar este estilo'))
+          )
+        )
+      );
+      rejilla.appendChild(card);
+    });
+
+    rejilla.appendChild(h('button', {
+      clase: 'ficha-estilo nuevo',
+      title: 'Crear un nuevo estilo de cero',
+      onclick: () => {
+        cerrarModalSeleccionarEstilo();
+        irALight('crear');
+      },
+    },
+      h('span', { clase: 'mas' }, '+'),
+      h('span', { clase: 'titulo' }, 'Crear estilo nuevo'),
+      h('span', { clase: 'pista' }, 'Define una nueva estética')));
+
+    cuerpoModal.appendChild(rejilla);
+  }
+
+  const modalCuadro = h('div', {
+    clase: 'modal-crear-video-cuadro',
+    onclick: ev => ev.stopPropagation(),
+  }, cabecera, cuerpoModal);
+
+  const velo = h('div', {
+    id: 'modal-elegir-estilo',
+    clase: 'modal-velo',
+    onclick: cerrarModalSeleccionarEstilo,
+  }, modalCuadro);
+
+  document.body.appendChild(velo);
+
+  _escuchaEscapeModalEstilo = ev => {
+    if (ev.key === 'Escape') cerrarModalSeleccionarEstilo();
+  };
+  window.addEventListener('keydown', _escuchaEscapeModalEstilo);
 }
 
 /* ============================================ EL VÍDEO DEL MODO LIGHT
@@ -6232,7 +6361,13 @@ function vistaElegidoLight() {
       onclick: () => { pararPrevia(); irALight('galeria'); },
     }, '← Volver'),
     h('h2', {}, 'Un vídeo nuevo'),
-    h('span', { clase: 'meta' }, ficha ? `con «${ficha.nombre}»` : 'sin estilo')));
+    h('span', { clase: 'meta' }, ficha ? `con «${ficha.nombre}»` : 'sin estilo'),
+    h('span', { clase: 'crece' }),
+    h('button', {
+      clase: 'mini fantasma',
+      title: 'Elegir otro estilo para este nuevo vídeo',
+      onclick: () => abrirModalSeleccionarEstilo(),
+    }, '🎨 Cambiar estilo')));
 
   if (!ficha) {
     caja.appendChild(cajaError('No se sabe con qué estilo hacer este vídeo. '
