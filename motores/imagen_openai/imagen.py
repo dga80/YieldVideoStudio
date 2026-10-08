@@ -23,6 +23,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+import uuid
 
 import requests
 from PIL import Image
@@ -523,8 +524,7 @@ def normalizar(ruta, cache_dir, lado_max=1024):
     # Visto el 25-08 tumbando una tanda en el plano 89 de 93, con las 88
     # anteriores ya pagadas. El temporal lleva el pid y el hilo dentro para que
     # dos escritores simultaneos tampoco se pisen entre ellos.
-    temporal = "%s.%d.%d.tmp" % (destino, os.getpid(),
-                                 threading.get_ident() & 0xffff)
+    temporal = f"{destino}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
     img.save(temporal, "PNG")
     return _sustituir(temporal, destino, ruta)
 
@@ -537,7 +537,7 @@ ESPERAS_BLOQUEO = (0.1, 0.25, 0.5, 1.0)
 
 
 def _sustituir(temporal, destino, origen):
-    """`os.replace` aguantando que el destino este abierto. -> destino.
+    """`os.replace` aguantando que el destino este abierto o ya creado por otro hilo. -> destino.
 
     EL TEMPORAL DE ARRIBA RESUELVE MEDIA CARRERA Y ABRE LA OTRA MITAD. Evita que
     se lea un PNG a medio escribir, si; pero en Windows no se puede sustituir un
@@ -552,6 +552,12 @@ def _sustituir(temporal, destino, origen):
         '...\\_refs\\tile_..._69ecf3d8.png.40948.32444.tmp'
         -> '...\\_refs\\tile_..._69ecf3d8.png'
 
+    O en sistemas con alta concurrencia o unidades externas, carreras donde
+    otro hilo ya movio el temporal o el destino ya existe:
+
+        FileNotFoundError: [Errno 2] No such file or directory:
+        '.../_refs/superviviente__0d171543.png.58588.12288.tmp' -> '...superviviente__0d171543.png'
+
     Y ES EL MISMO FICHERO. El nombre lleva dentro el sha1 de la ruta de origen,
     asi que dos hilos que se pisan aqui han escrito lo mismo byte a byte. Por
     eso, si despues de insistir el destino ya esta ahi y no es mas viejo que su
@@ -562,22 +568,40 @@ def _sustituir(temporal, destino, origen):
     Lo que si sube es un bloqueo que no deja destino utilizable: eso no es una
     carrera, es otra cosa, y taparlo dejaria el plano sin su referencia.
     """
+    if _al_dia(destino, origen):
+        try:
+            if os.path.exists(temporal):
+                os.remove(temporal)
+        except OSError:
+            pass
+        return destino
+
     fallo = None
     for espera in ESPERAS_BLOQUEO + (0,):
         try:
             os.replace(temporal, destino)
             return destino
-        except PermissionError as choque:
+        except (PermissionError, FileNotFoundError, OSError) as choque:
             fallo = choque
+            if _al_dia(destino, origen):
+                try:
+                    if os.path.exists(temporal):
+                        os.remove(temporal)
+                except OSError:
+                    pass
+                return destino
             if espera:
                 time.sleep(espera)
     if _al_dia(destino, origen):
         try:
-            os.remove(temporal)
+            if os.path.exists(temporal):
+                os.remove(temporal)
         except OSError:
             pass
         return destino
-    raise fallo
+    if fallo is not None:
+        raise fallo
+    raise FileNotFoundError(destino)
 
 
 def _al_dia(destino, origen):

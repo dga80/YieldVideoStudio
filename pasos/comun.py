@@ -469,6 +469,136 @@ def ficha_de_fotogramas(ruta, clave):
     return datos
 
 
+def _quitar_comentarios_json(s):
+    """Elimina comentarios // y /* */ fuera de cadenas entrecomilladas."""
+    res = []
+    i, n = 0, len(s)
+    dentro_doble, dentro_simple, escapado = False, False, False
+    while i < n:
+        c = s[i]
+        if dentro_doble:
+            res.append(c)
+            if escapado:
+                escapado = False
+            elif c == "\\":
+                escapado = True
+            elif c == '"':
+                dentro_doble = False
+            i += 1
+            continue
+        if dentro_simple:
+            res.append(c)
+            if escapado:
+                escapado = False
+            elif c == "\\":
+                escapado = True
+            elif c == "'":
+                dentro_simple = False
+            i += 1
+            continue
+        if c == '"':
+            dentro_doble = True
+            res.append(c)
+            i += 1
+            continue
+        if c == "'":
+            dentro_simple = True
+            res.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and s[i + 1] == "/":
+            i += 2
+            while i < n and s[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and s[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (s[i] == "*" and s[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        res.append(c)
+        i += 1
+    return "".join(res)
+
+
+def _quitar_comas_finales_json(s):
+    """Elimina comas sobrantes antes de } o ] fuera de cadenas."""
+    res = []
+    i, n = 0, len(s)
+    dentro_doble, dentro_simple, escapado = False, False, False
+    while i < n:
+        c = s[i]
+        if dentro_doble:
+            res.append(c)
+            if escapado:
+                escapado = False
+            elif c == "\\":
+                escapado = True
+            elif c == '"':
+                dentro_doble = False
+            i += 1
+            continue
+        if dentro_simple:
+            res.append(c)
+            if escapado:
+                escapado = False
+            elif c == "\\":
+                escapado = True
+            elif c == "'":
+                dentro_simple = False
+            i += 1
+            continue
+        if c == '"':
+            dentro_doble = True
+            res.append(c)
+            i += 1
+            continue
+        if c == "'":
+            dentro_simple = True
+            res.append(c)
+            i += 1
+            continue
+        if c == ",":
+            j = i + 1
+            while j < n and s[j] in " \t\r\n":
+                j += 1
+            if j < n and s[j] in "}]":
+                i += 1
+                continue
+        res.append(c)
+        i += 1
+    return "".join(res)
+
+
+def _reparar_json(cadena):
+    """Intenta cargar un JSON malformado por deslices habituales del LLM.
+
+    Sanea comentarios, trailing commas y prueba con PyYAML o ast.literal_eval
+    para admitir claves sin comillas, comillas simples o booleanos de Python.
+    """
+    limpio = _quitar_comas_finales_json(_quitar_comentarios_json(cadena))
+    try:
+        return json.loads(limpio)
+    except Exception:
+        pass
+    try:
+        import yaml
+        val = yaml.safe_load(limpio)
+        if isinstance(val, (dict, list)):
+            return val
+    except Exception:
+        pass
+    try:
+        import ast
+        val = ast.literal_eval(limpio)
+        if isinstance(val, (dict, list)):
+            return val
+    except Exception:
+        pass
+    return None
+
+
 def extraer_json(texto, que="la respuesta"):
     """Saca el objeto JSON de una respuesta del CLI aunque venga envuelto.
 
@@ -493,17 +623,52 @@ def extraer_json(texto, que="la respuesta"):
     """
     texto = str(texto or "").strip()
     if texto.startswith("```"):
-        texto = re.sub(r"^```[a-z]*\s*|\s*```$", "", texto)
+        texto = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", texto)
+        texto = re.sub(r"\s*```\s*$", "", texto).strip()
     try:
         return json.loads(texto)
     except ValueError:
         pass
-    principio, final = texto.find("{"), texto.rfind("}")
-    if principio >= 0 and final > principio:
+
+    bloque_md = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", texto, re.IGNORECASE)
+    if bloque_md:
+        sub = bloque_md.group(1).strip()
         try:
-            return json.loads(texto[principio:final + 1])
-        except ValueError as fallo:
-            raise RuntimeError(f"{que} no es un JSON legible: {fallo}")
+            return json.loads(sub)
+        except ValueError:
+            pass
+        rep = _reparar_json(sub)
+        if rep is not None:
+            return rep
+
+    principio, final = texto.find("{"), texto.rfind("}")
+    p_arr, f_arr = texto.find("["), texto.rfind("]")
+    candidato = None
+    if principio >= 0 and final > principio:
+        if p_arr >= 0 and f_arr > p_arr and p_arr < principio and f_arr > final:
+            candidato = texto[p_arr:f_arr + 1]
+        else:
+            candidato = texto[principio:final + 1]
+    elif p_arr >= 0 and f_arr > p_arr:
+        candidato = texto[p_arr:f_arr + 1]
+
+    fallo_original = None
+    if candidato is not None:
+        try:
+            return json.loads(candidato)
+        except ValueError as err_inicial:
+            fallo_original = err_inicial
+        rep = _reparar_json(candidato)
+        if rep is not None:
+            return rep
+
+    if candidato is None and ("{" in texto or "[" in texto):
+        rep = _reparar_json(texto)
+        if rep is not None:
+            return rep
+
+    if fallo_original is not None:
+        raise RuntimeError(f"{que} no es un JSON legible: {fallo_original}")
     raise RuntimeError(f"{que} no trae ningun objeto JSON: {texto[:300]}")
 
 

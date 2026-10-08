@@ -1914,7 +1914,8 @@ def _svg(interior, escala=1, lienzo=None, fuera="", salida=None, k=None):
     w, h = TAMANO
     if not lienzo or tuple(lienzo) == tuple(TAMANO):
         return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-                f'width="{int(w * escala)}" height="{int(h * escala)}">'
+                f'width="{int(w * escala)}" height="{int(h * escala)}" '
+                f'preserveAspectRatio="xMidYMid slice">'
                 f'{fuera}{interior}</svg>')
     lw, lh = int(lienzo[0]), int(lienzo[1])
     # EN LA BANDA VISIBLE, no en el ancho del lienzo. El lienzo vertical es
@@ -1936,7 +1937,8 @@ def _svg(interior, escala=1, lienzo=None, fuera="", salida=None, k=None):
     x = (lw - ancho) / 2.0
     y = (lh - alto) / 2.0
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {lw} {lh}" '
-            f'width="{int(lw * escala)}" height="{int(lh * escala)}">'
+            f'width="{int(lw * escala)}" height="{int(lh * escala)}" '
+            f'preserveAspectRatio="xMidYMid slice">'
             f'{fuera}'
             f'<svg x="{x:.1f}" y="{y:.1f}" width="{ancho:.1f}" height="{alto:.1f}" '
             f'viewBox="0 0 {w} {h}" preserveAspectRatio="xMidYMid meet">'
