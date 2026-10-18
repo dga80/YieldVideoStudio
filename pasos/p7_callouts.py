@@ -65,14 +65,10 @@ PARAMS_POR_DEFECTO = {
     # CUANTO TAPA LA CAJA de detras del subtitulo: "auto" es lo decidido por el
     # canal (SUB_CAJA_OPACIDAD), y un numero de 0 a 1 manda sobre ello. 0 la
     # quita del todo y deja el texto a pelo.
-    #
-    # Existe porque no habia forma de pedirlo: la opacidad era una constante de
-    # modulo, asi que «bajale un poco la caja al subtitulo» no tenia donde
-    # aterrizar -- y lo que parecia el mando, la clave `opacidad` de los tres
-    # SETS_DISENO, no la leia nadie. Un mando que no existe es peor que uno
-    # feo: el enrutador del estilo grafico habria escrito ahi, el video habria
-    # salido igual, y la correccion habria quedado marcada como aplicada.
     "subtitulo_caja": "auto",
+    # QUE TIPOGRAFIA llevan los subtitulos: "sans" (sin serif, recomendada y por
+    # defecto para maxima legibilidad) | "serif" (con serif) | "auto" (la del set de diseno).
+    "subtitulo_fuente": "sans",
     # Set de estilo de diseno: dibujo | realista | editorial. Lo sugiere la guia
     # de estilo del video (ver diseno_sugerido) y se puede cambiar a mano.
     # Escrito y no DISENO_POR_DEFECTO porque los sets se declaran mas abajo:
@@ -275,11 +271,44 @@ DISENO_POR_DEFECTO = "dibujo"
 assert PARAMS_POR_DEFECTO["diseno"] == DISENO_POR_DEFECTO
 assert DISENO_POR_DEFECTO in SETS_DISENO
 
+SUB_TIPOGRAFIAS = {
+    "sans": "Verdana, sans-serif",
+    "sin serif": "Verdana, sans-serif",
+    "sans-serif": "Verdana, sans-serif",
+    "serif": "Georgia, serif",
+    "con serif": "Georgia, serif",
+}
+SUB_TIPOGRAFIAS_VALIDAS = ("sans", "serif", "auto")
+SUB_TIPOGRAFIA_POR_DEFECTO = "sans"
+
+
+def fuente_subtitulo(p=None, diseno=None):
+    """Familia tipográfica para los subtítulos. -> str
+
+    Por defecto SIEMPRE 'sans' (Verdana, sans-serif), más legible y estándar
+    en vídeo que una tipografía con remates/serif. Si el usuario pide 'serif'
+    (Georgia, serif) o 'auto' (hereda del set de diseño), se respeta.
+    """
+    elegida = str((p or {}).get("subtitulo_fuente") or "").strip().lower()
+    if not elegida:
+        try:
+            import ajustes
+            elegida = str(ajustes.leer().get("subtitulo_fuente") or "").strip().lower()
+        except Exception:
+            elegida = ""
+    elegida = elegida or SUB_TIPOGRAFIA_POR_DEFECTO
+    if elegida in SUB_TIPOGRAFIAS:
+        return SUB_TIPOGRAFIAS[elegida]
+    if elegida == "auto":
+        return (diseno or {}).get("fuente") or SUB_TIPOGRAFIAS["sans"]
+    return elegida
+
 
 def describir(params):
     """Frase corta con lo que hara el paso con estos parametros."""
     p = _con_defectos(params)
-    return (f"Escribe los subtitulos de cada plano en {p['fuente']} "
+    fnt = fuente_subtitulo(p)
+    return (f"Escribe los subtitulos de cada plano en {fnt} "
             f"(tamano {p['subtitulo_tam']}), sincronizados con la voz y en una "
             f"banda que es la misma en todo el video, y calcula las ventanas de "
             f"zoom sobre hyperframes x{p['escala_hyper']}.")
@@ -607,7 +636,7 @@ def opacidad_de_caja(p):
 
 
 def bloque_subtitulo(trozo, banda, tam, paleta, diseno, opacidad=None,
-                     fundido=True):
+                     fundido=True, fuente_nombre=None):
     """Un trozo de subtitulo dibujado: uno o dos renglones, centrados, en caja.
 
     CON CAJA NEGRA LIGERA, Y ES UN CAMBIO DELIBERADO. El 22-08 se decidio lo
@@ -633,7 +662,7 @@ def bloque_subtitulo(trozo, banda, tam, paleta, diseno, opacidad=None,
     NUNCA EN VERSALES, aunque el set del grafismo las pida: una banda de sitio en
     mayusculas es un gesto de diseno y un subtitulo en mayusculas es ilegible.
     """
-    fuente_nombre = (diseno or {}).get("fuente") or "Verdana"
+    fuente_nombre = fuente_nombre or fuente_subtitulo(None, diseno)
     # SE MIDE CON LA MISMA FUENTE QUE SE DIBUJA. El SVG pide `font-weight` 600 y
     # Verdana no tiene un corte de 600: el navegador sube al siguiente que hay,
     # que es el 700, o sea `verdanab.ttf`. Midiendo con la regular la caja salia
@@ -719,6 +748,7 @@ def capa_fija_de(escena, p, banda=None, salida=SALIDA):
     # fuente
     _, diseno = diseno_de(p, (p.get("estilo") or {}).get("guia"))
     tam = tamano_subtitulo(p, salida)
+    fuente_nombre = fuente_subtitulo(p, diseno)
     trozos = subtitulos.de_escena(
         escena, idioma=p.get("idioma"),
         cap_linea=cap_subtitulo(tam, banda),
@@ -727,7 +757,8 @@ def capa_fija_de(escena, p, banda=None, salida=SALIDA):
     tapa = opacidad_de_caja(p)
     # en vertical sin fundidos: cada trozo dura poco y se lee entero
     piezas = [bloque_subtitulo(x, banda, tam, paleta, diseno, tapa,
-                               fundido=not es_vertical(salida))
+                               fundido=not es_vertical(salida),
+                               fuente_nombre=fuente_nombre)
               for x in trozos]
     fichas = [{"tipo": "subtitulo", "texto": x["texto"],
                "desde": x["desde"], "hasta": x["hasta"]} for x in trozos]

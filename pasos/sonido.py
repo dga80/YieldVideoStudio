@@ -581,6 +581,33 @@ def arco_del_video(escenas, duracion_s=0.0):
     return tramos
 
 
+def _leer_medidas_musica():
+    ruta_cache = banco("musica", "medidas.json")
+    if not os.path.exists(ruta_cache):
+        return {}
+    try:
+        with open(ruta_cache, "r", encoding="utf-8-sig") as fh:
+            return json.load(fh) or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _guardar_medida_musica(nombre, sello, ficha):
+    ruta_cache = banco("musica", "medidas.json")
+    cache = _leer_medidas_musica()
+    clave = os.path.splitext(nombre)[0]
+    entrada = {"sello": sello, "medida": ficha}
+    cache[nombre] = entrada
+    cache[clave] = entrada
+    try:
+        temporal = ruta_cache + ".parcial"
+        with open(temporal, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh, ensure_ascii=False, indent=1)
+        os.replace(temporal, ruta_cache)
+    except OSError:
+        pass
+
+
 def medir(ruta):
     """Como suena un tema, en numeros. Sin oirlo y sin llamar a nadie.
 
@@ -589,10 +616,30 @@ def medir(ruta):
     se pelea con el narrador por el mismo sitio. Un tema de graves gordos y
     medios flojos deja el hueco donde tiene que estar.
 
-    Se hace en numpy y no con un grafo de ffmpeg porque el WAV ya esta
-    decodificado para todo lo demas: tres FFT contra tres llamadas a un proceso.
+    Se hace en numpy y no con un grafo de ffmpeg, cacheando el resultado en
+    `medidas.json` y borrando el `.48000.wav` temporal tras medir para no dejar
+    decenas de megas por pista en `banco/audio/musica/`.
     """
-    muestras = _leer(_a_wav(ruta))
+    nombre = os.path.basename(ruta) if ruta else ""
+    sello = ""
+    if ruta and os.path.exists(ruta):
+        sello = f"{os.path.getmtime(ruta):.0f}:{os.path.getsize(ruta)}"
+        guardado = _leer_medidas_musica().get(nombre)
+        if isinstance(guardado, dict) and guardado.get("sello") == sello:
+            medida = guardado.get("medida")
+            if isinstance(medida, dict) and "medios" in medida:
+                return dict(medida)
+
+    wav_esperado = os.path.splitext(ruta)[0] + f".{FRECUENCIA}.wav"
+    tenia_wav = os.path.exists(wav_esperado)
+    try:
+        muestras = _leer(_a_wav(ruta, wav_esperado))
+    finally:
+        if not tenia_wav and os.path.exists(wav_esperado):
+            try:
+                os.remove(wav_esperado)
+            except OSError:
+                pass
     if not len(muestras):
         return {"lufs": -99.0, "graves": -99.0, "medios": -99.0, "agudos": -99.0}
     mono = muestras.mean(axis=1)
@@ -605,11 +652,13 @@ def medir(ruta):
     hercios = np.fft.rfftfreq(len(trozo), 1.0 / FRECUENCIA)
     total = float(espectro.sum()) or 1.0
     ficha = {}
-    for nombre, (bajo, alto) in BANDAS.items():
+    for banda, (bajo, alto) in BANDAS.items():
         dentro = espectro[(hercios >= bajo) & (hercios < alto)].sum()
-        ficha[nombre] = round(10.0 * np.log10(max(dentro / total, 1e-9)), 1)
+        ficha[banda] = round(10.0 * np.log10(max(dentro / total, 1e-9)), 1)
     rms = float(np.sqrt(np.mean(np.square(trozo)))) or 1e-9
     ficha["lufs"] = round(20.0 * np.log10(rms), 1)
+    if nombre and sello:
+        _guardar_medida_musica(nombre, sello, ficha)
     return ficha
 
 
@@ -629,24 +678,50 @@ def elegir_tema(candidatos, evitar=()):
 
     `evitar` son los ids que ya han salido en otro tramo: dos tramos seguidos
     con el mismo tema es exactamente lo que esto viene a quitar.
+    Los candidatos descartados que se hayan bajado solo para medirlos se borran
+    al terminar (su medida ya queda guardada en `medidas.json`).
     """
     evitar = {str(i) for i in (evitar or [])}
+    cache_medidas = _leer_medidas_musica()
     mejor, mejor_punto = None, None
-    for ficha in candidatos or []:
-        if str(ficha.get("id")) in evitar:
-            continue
-        try:
-            ruta = traer(ficha, "musica")
-            medida = medir(ruta)
-        except Exception as fallo:                     # un tema caido no corta
-            ficha["error"] = str(fallo)[:120]
-            continue
-        punto = puntuar(medida)
-        ficha["medida"] = medida
-        ficha["punto"] = round(punto, 1)
-        if mejor_punto is None or punto > mejor_punto:
-            mejor, mejor_punto = ficha, punto
-    return mejor
+    nuevos = {}
+    try:
+        for ficha in candidatos or []:
+            cid = str(ficha.get("id"))
+            if cid in evitar:
+                continue
+            clave = clave_de(ficha)
+            guardado = cache_medidas.get(clave)
+            medida = (guardado.get("medida")
+                      if isinstance(guardado, dict) else None)
+            if not (isinstance(medida, dict) and "medios" in medida):
+                destino = banco("musica", _nombre_de(ficha))
+                existia = os.path.exists(destino) and os.path.getsize(destino) > 2000
+                try:
+                    ruta = traer(ficha, "musica")
+                    if not existia:
+                        nuevos[cid] = ruta
+                    medida = medir(ruta)
+                except Exception as fallo:                 # un tema caido no corta
+                    ficha["error"] = str(fallo)[:120]
+                    continue
+            punto = puntuar(medida)
+            ficha["medida"] = dict(medida)
+            ficha["punto"] = round(punto, 1)
+            if mejor_punto is None or punto > mejor_punto:
+                mejor, mejor_punto = ficha, punto
+        if mejor is not None:
+            traer(mejor, "musica")
+        return mejor
+    finally:
+        ganador_id = str(mejor.get("id")) if isinstance(mejor, dict) else None
+        for cid, ruta in nuevos.items():
+            if cid != ganador_id and os.path.exists(ruta):
+                try:
+                    os.remove(ruta)
+                except OSError:
+                    pass
+
 
 
 def montar_banda(escenas, duracion_s, avisar=None, tramos=None):

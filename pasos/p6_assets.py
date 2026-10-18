@@ -2650,6 +2650,23 @@ def construir_prompt_modular(
     return positive_prompt, negative_prompt
 
 
+def _es_estilo_realista(estilo):
+    """Detecta si el estilo configurado busca fotorrealismo o cinematografía documental."""
+    if not estilo or not isinstance(estilo, dict):
+        return False
+    if estilo.get("diseno") in ("realista", "fotografico", "35mm", "documental_realista"):
+        return True
+    guia = estilo.get("guia")
+    texto = ""
+    if isinstance(guia, dict):
+        texto = f"{guia.get('guia', '')} {guia.get('trazo', '')} {guia.get('resumen_es', '')}"
+    elif isinstance(guia, str):
+        texto = guia
+    texto += f" {estilo.get('prompt', '')}"
+    pat_realista = r"\b(photorealistic|fotorrealista|35mm|cinematography|hyperrealistic|hiperrealista|documentary cinematography|fotograf(?:ia|ica))\b"
+    return bool(re.search(pat_realista, texto, re.IGNORECASE))
+
+
 def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
                      formato="", fichas_reparto=None):
     """Prompt final citando cada referencia por su posicion, como espera la API.
@@ -2659,7 +2676,11 @@ def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
     `_citar_reparto`, que es quien la quito del texto de la escena.
     """
     reglas = medios.motor("reglas/reglas.py")
-    lineas = ["Draw a single illustration for one shot of an animated documentary."]
+    es_real = _es_estilo_realista(estilo)
+    if es_real:
+        lineas = ["Capture a single cinematic 35mm photorealistic documentary photograph for one shot of a realistic film."]
+    else:
+        lineas = ["Draw a single illustration for one shot of an animated documentary."]
     if p2_brief.comun.normalizar_formato(formato) == "vertical":
         # EL CUADRO ES VERTICAL, y hay que decirlo: las referencias de estilo
         # son apaisadas y sin esta linea el generador compone un plano apaisado
@@ -2684,16 +2705,28 @@ def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
               if ref["papel"] == "lamina"]
     if lamina:
         indice, ref = lamina[0]
-        lineas.append(
-            f"Reference image {indice} is a STYLE SHEET: a single picture that "
-            f"contains {ref.get('cuantas') or 'several'} separate frames from the "
-            f"same production, laid side by side only so they fit in one image. "
-            f"Copy the drawing style they share -- line weight, palette, shapes, "
-            f"proportions -- and never their content. "
-            f"Its grid layout is NOT part of the style and must NOT be "
-            f"reproduced: your output is ONE single full-bleed illustration of "
-            f"one moment. Never draw a grid, a collage, a contact sheet, panels, "
-            f"a split screen, borders, frames or separate boxes.")
+        if es_real:
+            lineas.append(
+                f"Reference image {indice} is a STYLE SHEET: a single picture that "
+                f"contains {ref.get('cuantas') or 'several'} separate frames from the "
+                f"same production, laid side by side only so they fit in one image. "
+                f"Copy the visual photographic style they share -- natural lighting, "
+                f"depth of field, physical textures, color grading -- and never their content. "
+                f"Its grid layout is NOT part of the style and must NOT be "
+                f"reproduced: your output is ONE single full-bleed photograph of "
+                f"one moment. Never draw a grid, a collage, a contact sheet, panels, "
+                f"a split screen, borders, frames, 2D drawings or separate boxes.")
+        else:
+            lineas.append(
+                f"Reference image {indice} is a STYLE SHEET: a single picture that "
+                f"contains {ref.get('cuantas') or 'several'} separate frames from the "
+                f"same production, laid side by side only so they fit in one image. "
+                f"Copy the drawing style they share -- line weight, palette, shapes, "
+                f"proportions -- and never their content. "
+                f"Its grid layout is NOT part of the style and must NOT be "
+                f"reproduced: your output is ONE single full-bleed illustration of "
+                f"one moment. Never draw a grid, a collage, a contact sheet, panels, "
+                f"a split screen, borders, frames or separate boxes.")
         # solo si alguien lo ha escrito: el defecto ya no rellena esto con una
         # descripcion generica, que era describirle otro video al generador
         if estilo.get("prompt"):
@@ -2704,12 +2737,20 @@ def _prompt_completo(escena, referencias, estilo, feedback="", idioma="",
     if estilos:
         cita = (f"reference image {estilos[0]}" if len(estilos) == 1
                 else f"reference images {estilos[0]} to {estilos[-1]}")
-        lineas.append(
-            f"Match exactly the art style of {cita}"
-            + (f": {estilo['prompt']}" if estilo.get("prompt") else "") + "."
-            + (" They are different shots of the same production: copy the "
-               "drawing style they share, never their content."
-               if len(estilos) > 1 else ""))
+        if es_real:
+            lineas.append(
+                f"Match exactly the photographic style of {cita}"
+                + (f": {estilo['prompt']}" if estilo.get("prompt") else "") + "."
+                + (" They are different shots of the same production: copy the "
+                   "photographic and lighting style they share, never their content."
+                   if len(estilos) > 1 else ""))
+        else:
+            lineas.append(
+                f"Match exactly the art style of {cita}"
+                + (f": {estilo['prompt']}" if estilo.get("prompt") else "") + "."
+                + (" They are different shots of the same production: copy the "
+                   "drawing style they share, never their content."
+                   if len(estilos) > 1 else ""))
 
     if estilos or lamina:
         lineas.extend(guia_escrita(estilo))
@@ -3547,6 +3588,9 @@ def _generar_escenas(plan, dirs, p, trabajo, toca, unidades, resultados, avisar,
             with cerrojo:
                 resultados[uid] = ficha
                 estado["coste"] += float(meta.get("coste") or 0.0)
+                hechas_ahora = estado["hechas"]
+            avisar(0.35 + 0.6 * (hechas_ahora / max(1, total)),
+                   f"plano {sid} listo · {hechas_ahora} de {total}", (hechas_ahora, total))
 
     # En fila tambien se va por grupos: es el MISMO reparto, un hilo detras de
     # otro. Asi «en fila» y «a la vez» dejan de ser dos caminos distintos con dos

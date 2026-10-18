@@ -22,6 +22,21 @@ import sys
 
 import requests
 
+try:
+    import edge_tts.communicate
+    import edge_tts.constants
+    _NUEVO_URL_EDGE = (
+        "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+        f"?Ocp-Apim-Subscription-Key={edge_tts.constants.TRUSTED_CLIENT_TOKEN}"
+    )
+    edge_tts.communicate.WSS_URL = _NUEVO_URL_EDGE
+    edge_tts.constants.WSS_URL = _NUEVO_URL_EDGE
+    from motores.voz_cartesia import edge_tts_motor
+    import importlib
+    importlib.reload(edge_tts_motor)
+except Exception:
+    pass
+
 API_SSE = "https://api.cartesia.ai/tts/sse"
 API_BYTES = "https://api.cartesia.ai/tts/bytes"
 API_VERSION = "2025-04-16"

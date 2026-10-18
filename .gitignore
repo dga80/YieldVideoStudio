@@ -34,3 +34,4 @@ despliegue/login/datos/
 node_modules/
 .claude/
 .DS_Store
+studio.log

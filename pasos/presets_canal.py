@@ -145,12 +145,12 @@ TIPOS = {
     "rotulos": {
         "nombre": "Grafismo",
         "que_fija": ("como se dibuja el texto en pantalla: el set de diseno, los "
-                     "colores fijados a mano y el tamano del subtitulo"),
+                     "colores fijados a mano, el tamano y la tipografia del subtitulo"),
         # `arquetipos` se cae: los rotulos se retiraron enteros el 22-08 y esa
         # clave llevaba desde entonces guardandose y aplicandose sin que nadie la
         # leyera. Y entra `subtitulo_tam`, que SI es una decision de grafismo y
         # se quedaba fuera: guardar un preset y aplicarlo perdia el tamano.
-        "claves": ("diseno", "paleta", "subtitulo_tam"),
+        "claves": ("diseno", "paleta", "subtitulo_tam", "subtitulo_fuente"),
         "pasos": ("callouts",),
     },
     "voz": {
@@ -1030,6 +1030,8 @@ def cambios_para(ficha, params_actuales=None):
             de_callouts["diseno"] = datos["diseno"]
         if datos.get("subtitulo_tam"):
             de_callouts["subtitulo_tam"] = datos["subtitulo_tam"]
+        if datos.get("subtitulo_fuente"):
+            de_callouts["subtitulo_fuente"] = datos["subtitulo_fuente"]
         if datos.get("paleta"):
             # solo viajan los papeles FIJADOS a mano: el resto se deriva de la
             # guia de estilo de CADA video, que es lo que hace que el rotulo

@@ -408,7 +408,8 @@ const API = {
   estadisticas: pares => `${BASE}/api/estadisticas`
     + (pares && Object.keys(pares).length ? `?${consulta(pares)}` : ''),
   valoracion: () => `${BASE}/api/estadisticas/valoracion`,
-  apartar: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}`,
+  apartar: (pid, definitivo) => `${BASE}/api/proyectos/${encodeURIComponent(pid)}`
+    + (definitivo ? '?definitivo=true&confirmar=true' : ''),
   duplicar: pid => `${BASE}/api/proyectos/${encodeURIComponent(pid)}/duplicar`,
   papelera: () => `${BASE}/api/proyectos/papelera`,
   papeleraFicha: carpeta => `${BASE}/api/proyectos/papelera/${encodeURIComponent(carpeta)}`,
@@ -2293,6 +2294,7 @@ function pintarConfig() {
   caja.appendChild(seccionAlmacenamiento());
   caja.appendChild(seccionGeneradorImagen());
   caja.appendChild(seccionCalidadImagen());
+  caja.appendChild(seccionTipografiaSubtitulos());
   caja.appendChild(seccionOtrasClaves(ficha));
   caja.appendChild(seccionProveedoresExternos(ficha));
   caja.appendChild(h('div', { clase: 'fila', estilo: 'margin-top:16px' },
@@ -2529,6 +2531,83 @@ function seccionCalidadImagen() {
 
   caja.appendChild(h('div', { clase: 'meta' },
     'Es el punto de partida de los vídeos NUEVOS. Los existentes conservan su configuración individual.'));
+  return caja;
+}
+
+
+async function guardarTipografiaSubtitulos(fuente) {
+  const vista = estadoConfig();
+  try {
+    const r = await pedir(API.ajustes(),
+                          { method: 'PUT', cuerpo: { subtitulo_fuente: fuente } });
+    vista.ajustes = { ...(vista.ajustes || {}), ajustes: r.ajustes, costes: r.costes };
+    if (APP.pid) {
+      try {
+        await pedir(API.disenoCallouts(APP.pid), {
+          method: 'PUT',
+          cuerpo: { subtitulo_fuente: fuente },
+        });
+      } catch (_) {}
+    }
+  } catch (e) {
+    vista.error = e.message;
+  }
+  repintarClaves();
+}
+
+
+/* TIPOGRAFÍA DE SUBTÍTULOS: Sin serif (Verdana) vs Con serif (Georgia). */
+function seccionTipografiaSubtitulos() {
+  const vista = estadoConfig();
+  const datos = vista.ajustes;
+  const elegida = (datos && datos.ajustes && datos.ajustes.subtitulo_fuente) || 'sans';
+  const caja = h('section', { clase: 'bloque-config' },
+    h('div', { clase: 'fila' },
+      h('h3', {}, 'Tipografía de subtítulos'),
+      h('span', { clase: 'crece' }),
+      datos ? pastillaEstado('ok', elegida === 'serif' ? 'CON SERIF' : 'SIN SERIF') : null));
+  if (!datos) {
+    caja.appendChild(h('div', { clase: 'cargando' }, 'leyendo ajustes...'));
+    return caja;
+  }
+
+  caja.appendChild(h('div', { clase: 'pista' },
+    'Elige el estilo de letra para los subtítulos en pantalla. Por defecto se usa siempre «sin serif» (Verdana) para máxima legibilidad en vídeo.'));
+
+  const opciones = [
+    {
+      id: 'sans',
+      nombre: 'Sin serif (Sans-serif)',
+      fuente: 'Verdana, sans-serif',
+      desc: 'Limpia y moderna · Máxima legibilidad en pantalla (Recomendada)',
+      meta: 'Por defecto',
+    },
+    {
+      id: 'serif',
+      nombre: 'Con serif (Serif)',
+      fuente: 'Georgia, serif',
+      desc: 'Clásica con remates · Estilo documental tradicional o editorial',
+      meta: 'Clásica',
+    },
+  ];
+
+  opciones.forEach(o => {
+    const puesta = o.id === elegida;
+    caja.appendChild(h('button', {
+      clase: 'fila-calidad' + (puesta ? ' elegida' : ''),
+      disabled: puesta,
+      title: puesta ? 'es la tipografía activa'
+        : `cambiar tipografía a ${o.nombre}`,
+      onclick: () => guardarTipografiaSubtitulos(o.id),
+    },
+      h('span', { clase: 'nombre', estilo: `font-family: ${o.fuente}` }, o.nombre),
+      h('span', { clase: 'precio', estilo: 'font-weight:normal; font-size:12px; color:var(--meta)' }, o.meta),
+      h('span', { clase: 'meta veces', estilo: `font-family: ${o.fuente}` }, o.fuente.split(',')[0]),
+      h('span', { clase: 'meta desglose' }, o.desc)));
+  });
+
+  caja.appendChild(h('div', { clase: 'meta' },
+    'Aplica como valor por defecto a los nuevos vídeos y al proyecto activo.'));
   return caja;
 }
 
@@ -4483,15 +4562,21 @@ function conmutarMenuProyectos() {
         onclick: () => { cerrarMenuProyectos(); duplicarProyecto(proyecto.id, nombre); },
       }, '⧉'),
       h('button', {
-        clase: 'mini fantasma apartar', title: `apartar «${nombre}» (no lo borra)`,
+        clase: 'mini fantasma apartar', title: `apartar «${nombre}» a la papelera (no lo borra)`,
         onclick: () => { cerrarMenuProyectos(); apartarProyecto(proyecto.id, nombre); },
-      }, '🗑')));
+      }, 'Apartar'),
+      h('button', {
+        clase: 'mini fantasma peligro', title: `eliminar definitivamente «${nombre}» y todos sus archivos`,
+        onclick: () => { cerrarMenuProyectos(); eliminarVideoLight({ id: proyecto.id, nombre }); },
+      }, '🗑️')));
   }
   if (!APP.proyectos.length) {
     menu.appendChild(h('div', { clase: 'vacio', estilo: 'padding:8px 12px' },
       'no hay ningún proyecto'));
   }
   menu.appendChild(h('div', { clase: 'pie-menu' },
+    h('button', { clase: 'mini fantasma', onclick: () => { cerrarMenuProyectos(); irAHome(); } },
+      '🏠 Menú principal'),
     h('button', { clase: 'mini primario', onclick: () => { cerrarMenuProyectos(); iniciarCreacionVideo(); } },
       '🎬 + Crear nuevo vídeo'),
     h('button', { clase: 'mini fantasma', onclick: () => { cerrarMenuProyectos(); abrirPapelera(); } },
@@ -4807,7 +4892,28 @@ async function borrarMarcadas(carpetas, lista, alTerminar) {
    dentro del menu del proyecto: en la barra no cabian en una linea, y 'apartar'
    como boton suelto actuaba sobre el proyecto abierto en vez de sobre el que
    quisieras apartar. */
+function irAHome() {
+  ['lupa', 'capturador', 'rendimiento', 'papelera', 'conservacion',
+   'cuadro-texto', 'modal-elegir-estilo']
+    .map(id => document.getElementById(id))
+    .forEach(nodo => { if (nodo) nodo.remove(); });
+  cerrarMenuProyectos();
+  if (!$('#config').classList.contains('plegado')) conmutarConfig(false);
+  if (COSTE.abierto) conmutarCoste();
+  pararPrevia();
+  recordarVideoLight('');
+  irALight('galeria');
+  cargarGaleriaLight(true);
+}
+
 function ponerMandosDeCabecera() {
+  const btnInicio = $('#btn-inicio');
+  if (btnInicio) btnInicio.addEventListener('click', () => irAHome());
+  const tituloCab = $('#cabecera h1');
+  if (tituloCab) {
+    tituloCab.title = 'Volver al menú principal (tus estilos y tus vídeos)';
+    tituloCab.addEventListener('click', () => irAHome());
+  }
   $('#btn-proyecto').addEventListener('click', ev => {
     ev.stopPropagation();
     conmutarMenuProyectos();
@@ -5169,11 +5275,11 @@ function migaDePanLight(pestanaActual) {
   const preset = presetActual();
   const contenedor = h('nav', { clase: 'miga-de-pan', 'aria-label': 'Ruta de navegación' });
 
-  // 1. Enlace a la galería de estilos
+  // 1. Enlace al menú principal (galería de estilos y vídeos)
   const enlaceEstilos = h('button', {
     clase: 'enlace-miga',
-    onclick: () => { pararPrevia(); recordarVideoLight(''); irALight('galeria'); },
-  }, 'Estilos');
+    onclick: () => irAHome(),
+  }, '🏠 Menú principal');
   contenedor.append(enlaceEstilos, h('span', { clase: 'separador' }, '›'));
 
   // 2. Si hay vídeo abierto, enlace al vídeo / encargo
@@ -5388,13 +5494,14 @@ function navLight() {
   const dentro = APP.light.vista === 'elegido' && !!v.pid;
   const sub = dentro ? v.vista : '';
   const hayGuion = dentro && !!v.guion;
-  const hayPlanos = dentro && !!versionDe(v.fichas.assets || {});
-  const hayVideo = dentro && (!!v.audio || hayMp4Light());
+  const hayPlanos = dentro && (!!versionDe(v.fichas.assets || {}) || (v.planos && v.planos.length > 0));
+  const hayVideo = dentro && (!!v.audio || hayMp4Light() || (v.planos && v.planos.length > 0) || !!trabajoVideoLight());
 
+  const enGaleria = APP.light.vista === 'galeria';
   const paradas = [
-    { id: 'estilos', texto: 'Estilos', puede: true, activa: !dentro,
-      porque: 'tus estilos y tus vídeos',
-      ir: () => { pararPrevia(); recordarVideoLight(''); irALight('galeria'); } },
+    { id: 'estilos', texto: 'Inicio', puede: true, activa: enGaleria,
+      porque: 'Menú principal: tus estilos y tus vídeos',
+      ir: () => irAHome() },
     /* EL ENCARGO: lo que se le pidió al redactor, tal cual está guardado en el
        vídeo abierto, y editable. Sin vídeo abierto no hay nada que revisar (el
        formulario de crear uno es otra pantalla, `vistaElegidoLight`). Cuenta
@@ -5419,7 +5526,7 @@ function navLight() {
         : 'todavía no hay imágenes que mirar',
       ir: () => { v.vista = 'previa'; pintarLight(); } },
     { id: 'video', texto: 'Vídeo', puede: hayVideo, activa: sub === 'video',
-      porque: hayVideo ? 'el montaje y el repaso' : 'todavía no hay nada montado',
+      porque: hayVideo ? (trabajoVideoLight() ? 'generación de planos en vivo' : 'el montaje y el repaso') : 'todavía no hay nada montado',
       ir: () => { pararPrevia(); v.vista = 'video'; pintarLight(); } },
   ];
 
@@ -5670,9 +5777,14 @@ function vistaGaleriaLight() {
         onclick: () => renombrarVideoLight(video),
       }, '✏️'),
       h('button', {
-        clase: 'mini fantasma peligro', title: 'A la papelera de proyectos',
+        clase: 'mini fantasma', title: 'Mandar a la papelera (sin borrar del disco)',
         onclick: () => apartarVideoLight(video),
-      }, 'Apartar'))));
+      }, 'Apartar'),
+      h('button', {
+        clase: 'mini fantasma peligro', title: 'Eliminar definitivamente este vídeo y todos sus archivos del disco',
+        'aria-label': `Eliminar definitivamente ${video.nombre || video.id}`,
+        onclick: () => eliminarVideoLight(video),
+      }, '🗑️ Eliminar'))));
     caja.appendChild(lista);
   } else if (fichas.length) {
     caja.appendChild(h('div', {
@@ -5788,6 +5900,34 @@ async function apartarVideoLight(video) {
     await cargarGaleriaLight(true);
     toast('vídeo apartado');
   } catch (e) { toast(`no se ha podido apartar: ${e.message}`, true); }
+}
+
+async function eliminarVideoLight(video) {
+  const nombre = video.nombre || video.id;
+  if (!window.confirm(`¿Eliminar definitivamente «${nombre}»?\n\n`
+    + 'Se borrará por completo del disco todo lo relacionado con este vídeo '
+    + '(proyecto, locución, vídeos renderizados, miniaturas e imágenes en caché exclusivas). '
+    + 'Esta acción NO se puede deshacer.')) return;
+  try {
+    const res = await pedir(API.apartar(video.id, true), { method: 'DELETE' });
+    if (videoLightGuardado() === video.id) recordarVideoLight('');
+    if (APP.light.video && APP.light.video.pid === video.id) {
+      APP.light.video = null;
+    }
+    if (APP.pid === video.id) {
+      localStorage.removeItem('estudio.pid');
+      Object.keys(APP.seguimientos).forEach(soltarSeguimiento);
+      APP.pid = null;
+      APP.proyecto = null;
+    }
+    await cargarProyectos();
+    await cargarGaleriaLight(true);
+    const mb = res && res.megas ? ` (${res.megas} MB liberados)` : '';
+    toast(`vídeo «${nombre}» eliminado por completo${mb}`);
+    if (APP.light.vista === 'elegido' && (!APP.light.video || !APP.light.video.pid)) {
+      irAHome();
+    }
+  } catch (e) { toast(`no se ha podido eliminar: ${e.message}`, true); }
 }
 
 async function descartarTallerLight(taller) {
@@ -6741,6 +6881,51 @@ function pedidoDelVideoLight() {
   return v.pedido;
 }
 
+function selectorEstiloLight(v, estiloActual) {
+  const listaPresets = presetsLight();
+  const actualId = (estiloActual && estiloActual.id) || v.estilo || '';
+  const desplegable = h('select', {
+    clase: 'entrada-select',
+    style: 'padding: 8px 12px; font-size: 14px; border-radius: 6px; border: 1px solid var(--linea, #444); background: var(--panel, #222); color: var(--texto, #eee); min-width: 240px; cursor: pointer;',
+    onchange: async ev => {
+      const nuevoId = ev.target.value;
+      if (!nuevoId || nuevoId === actualId) return;
+      const nuevoPreset = fichaLight(nuevoId) || { nombre: nuevoId };
+      const seguro = window.confirm(
+        `¿Cambiar el estilo de este vídeo a «${nuevoPreset.nombre}»?\n\n`
+        + 'Esto actualizará el estilo visual de los planos, el tono del guion y la voz del locutor.\n'
+        + 'Podrás pulsar «Regenerar el guion» para reescribirlo con el nuevo tono, o ir a Guion y regenerar directamente el audio y las imágenes.'
+      );
+      if (!seguro) {
+        ev.target.value = actualId;
+        return;
+      }
+      try {
+        await pedir(API.presetCanalAplicar(v.pid, nuevoId), { method: 'POST' });
+        toast(`Estilo cambiado a «${nuevoPreset.nombre}»`);
+        await cargarVideoLight(v.pid);
+        pintarLight();
+      } catch (err) {
+        toast(`Error al cambiar de estilo: ${err.message}`, true);
+        ev.target.value = actualId;
+      }
+    },
+  });
+
+  listaPresets.forEach(p => {
+    const opt = h('option', { value: p.id }, p.nombre || p.id);
+    if (p.id === actualId) opt.selected = true;
+    desplegable.appendChild(opt);
+  });
+
+  return h('div', { clase: 'campo campo-estilo-light' },
+    h('label', {}, 'Estilo visual y de voz'),
+    desplegable,
+    h('span', { clase: 'pista' },
+      'Cambiar el estilo actualiza el tono del guionista, el locutor y los planos. Puedes regenerar el guion o mantenerlo y rehacer solo audio e imágenes.')
+  );
+}
+
 function vistaEncargoVideoLight() {
   const v = APP.light.video;
   const estilo = fichaLight(v.estilo);
@@ -6752,7 +6937,12 @@ function vistaEncargoVideoLight() {
     h('span', { clase: 'meta' },
       estilo ? `con «${estilo.nombre}»` : (v.estilo ? `con «${v.estilo}»` : '')),
     h('span', { clase: 'crece' }),
-    costeLight()));
+    costeLight(),
+    v.pid ? h('button', {
+      clase: 'mini fantasma peligro',
+      title: 'Eliminar definitivamente este vídeo y todos sus archivos del disco',
+      onclick: () => eliminarVideoLight({ id: v.pid, nombre: v.nombre || v.pid }),
+    }, '🗑️ Eliminar vídeo') : null));
 
   const error = ERRORES[CLAVE_VIDEO_LIGHT];
   if (error) caja.appendChild(cajaError(error));
@@ -6779,8 +6969,9 @@ function vistaEncargoVideoLight() {
       ayuda: 'Es la etiqueta del vídeo en la lista. Cambiarla no regenera nada.' });
   const entradaNombre = nombre.querySelector('input');
   if (entradaNombre) entradaNombre.dataset.foco = 'encargo-nombre';
-  caja.appendChild(bloqueLight('El vídeo', 'cómo se llama y cuánto dura',
+  caja.appendChild(bloqueLight('El vídeo', 'cómo se llama, su estilo y cuánto dura',
     nombre,
+    selectorEstiloLight(v, estilo),
     duracionLight(e, estilo),
     selectorFormato(e.formato, valor => { e.formato = valor; programarGuardadoEncargo(); })));
 
@@ -6953,7 +7144,11 @@ async function lanzarTandaLight(tanda, modo) {
     // regeneraciones de un plano suelto (`soltarCola`), y sin esto la cuenta
     // atras de una imagen se pintaba con el previsto de la ultima tanda.
     v.planDe = tid;
-    if (tanda === 'video') v.planos = [];
+    if (tanda === 'video') {
+      v.planos = [];
+      v.planoInspeccionado = null;
+      v.vista = 'video';
+    }
     seguirTrabajo(CLAVE_VIDEO_LIGHT, tid, async trabajo => {
       if (trabajo.estado === 'listo') {
         await cargarVideoLight(v.pid);
@@ -7313,9 +7508,47 @@ function vistaGuionLight() {
      hacia que la PRIMERA pasada los marcara todos «editado» y solo se
      corrigiera al repintar. Va con freno, asi que no es una peticion mas. */
   refrescarPlanLight('voz');
+  caja.appendChild(enVivo(() => bannerLiveGeneracionGuionLight()));
   caja.appendChild(promptGeneralLight());
   caja.appendChild(bloquesLight());
   BARRA_INFERIOR.nodo = pieLight();
+  return caja;
+}
+
+function bannerLiveGeneracionGuionLight() {
+  const v = APP.light.video;
+  const trabajo = trabajoVideoLight();
+  if (!trabajo) return null;
+  const nombre = String(trabajo.nombre || '');
+  if (!nombre.includes('video') && !nombre.includes('assets')) return null;
+
+  const nPlanos = (v.planos || []).length;
+  const caja = h('div', { clase: 'banner-live-generacion' });
+
+  const info = h('div', { clase: 'live-info' },
+    h('span', { clase: 'punto-live' }),
+    h('b', {}, nPlanos
+      ? `Generando imágenes en tiempo real (${nPlanos} listas)`
+      : 'Generando imágenes en tiempo real…'),
+    h('span', { clase: 'meta' },
+      'Puedes ver cómo van quedando en vivo o parar si no te gusta el estilo.')
+  );
+
+  const acciones = h('div', { clase: 'live-acciones' },
+    h('button', {
+      clase: 'mini primario',
+      onclick: () => { v.vista = 'video'; pintarLight(); },
+      title: 'Abrir el visor en directo para ver los fotogramas en grande',
+    }, '👁️ Ver en directo'),
+    h('button', {
+      clase: 'mini peligro',
+      onclick: () => cancelar(CLAVE_VIDEO_LIGHT),
+      title: 'Detener la generación ahora',
+    }, '🛑 Parar')
+  );
+
+  caja.appendChild(info);
+  caja.appendChild(acciones);
   return caja;
 }
 
@@ -8685,10 +8918,19 @@ function vistaVideoLight() {
      de distancia, detras de esa pantalla, que es el orden en que se hicieron
      las cosas. Si no hay planos no hay nada que mirar y se va al guion, que es
      de donde se venia. */
-  caja.appendChild(h('div', { clase: 'light-cab' },
-    h('h2', {}, v.nombre || 'El vídeo'),
-    h('span', { clase: 'crece' }),
-    costeLight()));
+  const cabHijos = [h('h2', {}, v.nombre || 'El vídeo')];
+  if (trabajoVideoLight()) {
+    cabHijos.push(h('span', { clase: 'badge-live' },
+      v.planos.length ? `🔴 EN VIVO · ${v.planos.length} planos listos` : '🔴 Generando imágenes…'));
+    cabHijos.push(h('button', {
+      clase: 'mini peligro boton-parar-live',
+      title: 'Detener la generación ahora. Las imágenes generadas hasta aquí se conservarán.',
+      onclick: () => cancelar(CLAVE_VIDEO_LIGHT),
+    }, '🛑 Parar generación'));
+  }
+  cabHijos.push(h('span', { clase: 'crece' }));
+  cabHijos.push(costeLight());
+  caja.appendChild(h('div', { clase: 'light-cab' }, ...cabHijos));
 
   const error = ERRORES[CLAVE_VIDEO_LIGHT];
   if (error) caja.appendChild(cajaError(error));
@@ -8697,31 +8939,70 @@ function vistaVideoLight() {
   if (hayMp4Light() && !trabajoVideoLight()) {
     marco.appendChild(videoLight());
   } else if (v.planos.length) {
-    // el último que ha caído, grande: es lo que se acaba de generar
-    const ultimo = v.planos[v.planos.length - 1];
+    // Si el usuario ha hecho clic en una miniatura, inspeccionamos esa; si no, el último en vivo
+    const seleccionado = v.planoInspeccionado
+      ? v.planos.find(p => p.id === v.planoInspeccionado)
+      : null;
+    const actual = seleccionado || v.planos[v.planos.length - 1];
     marco.appendChild(h('img', {
-      src: API.archivo(v.pid, ultimo.ruta || ''), alt: ultimo.id || '',
+      src: API.archivo(v.pid, actual.ruta || ''), alt: actual.id || '',
     }));
-    marco.appendChild(h('div', { clase: 'sello' },
-      `${ultimo.id || ''} · ${v.planos.length} planos`));
+    const textoSello = seleccionado
+      ? `👁️ Inspeccionando ${actual.id} (haz clic aquí para volver al último en directo)`
+      : `${actual.id || ''} · ${v.planos.length} planos generados`;
+    const selloNodo = h('div', {
+      clase: 'sello' + (seleccionado ? ' interactivo' : ''),
+      onclick: seleccionado ? (ev => { ev.stopPropagation(); v.planoInspeccionado = null; pintarLight(); }) : null,
+    }, textoSello);
+    marco.appendChild(selloNodo);
   } else {
     marco.appendChild(h('div', { clase: 'vacio' },
-      trabajoVideoLight() ? 'montando los planos…' : 'todavía no hay vídeo'));
+      trabajoVideoLight()
+        ? 'Generando imágenes en tiempo real… En cuanto caiga el primer plano aparecerá aquí automáticamente.'
+        : 'todavía no hay vídeo'));
   }
   caja.appendChild(marco);
 
-  /* LA TIRA DE VINETAS SOLO MIENTRAS SE GENERA.
-     Con el video ya montado esta pantalla es para VERLO y comentarlo, y
-     cuarenta miniaturas debajo del reproductor empujan el repaso fuera de
-     pantalla y repiten lo que ya se mira mejor en las diapositivas. Mientras
-     se genera si valen: son lo unico que ensena que algo esta pasando. */
-  if (v.planos.length && trabajoVideoLight()) {
-    const tira = h('div', { clase: 'tira-planos' });
-    v.planos.slice(-40).forEach(plano => tira.appendChild(h('img', {
-      src: API.archivo(v.pid, plano.ruta || ''), alt: plano.id || '',
-      loading: 'lazy', title: plano.id || '',
-    })));
+  /* LA TIRA DE VINETAS: interactiva para poder inspeccionar cualquiera en grande */
+  if (v.planos.length && (trabajoVideoLight() || !hayMp4Light())) {
+    const tira = h('div', { clase: 'tira-planos interactiva' });
+    const actualId = (v.planoInspeccionado || (v.planos[v.planos.length - 1] || {}).id);
+    v.planos.slice(-60).forEach(plano => {
+      const celda = h('div', {
+        clase: 'item-plano' + (plano.id === actualId ? ' activo' : ''),
+        title: `Plano ${plano.id} (clic para ver grande)`,
+        onclick: () => {
+          v.planoInspeccionado = plano.id;
+          pintarLight();
+        },
+      },
+        h('img', {
+          src: API.archivo(v.pid, plano.ruta || ''), alt: plano.id || '',
+          loading: 'lazy',
+        }),
+        h('span', { clase: 'tag-sid' }, plano.id || '')
+      );
+      tira.appendChild(celda);
+    });
     caja.appendChild(tira);
+  }
+
+  /* Si se ha detenido la generación a medias y hay planos listos */
+  if (!trabajoVideoLight() && v.planos.length && !hayMp4Light()) {
+    caja.appendChild(h('div', { clase: 'caja-info aviso-parada' },
+      h('b', {}, `Generación en pausa (${v.planos.length} imágenes listas)`),
+      h('span', { clase: 'meta' }, ' — Puedes inspeccionar las imágenes generadas haciendo clic en las miniaturas. Si el estilo te convence, puedes reanudar la generación de las que faltan.'),
+      h('div', { clase: 'fila', estilo: 'margin-top:8px;gap:8px;' },
+        h('button', {
+          clase: 'mini primario',
+          onclick: () => lanzarTandaLight('video', 'pendientes'),
+        }, '▶ Continuar generando restantes'),
+        h('button', {
+          clase: 'mini fantasma',
+          onclick: () => { v.vista = 'guion'; pintarLight(); },
+        }, 'Volver al guion')
+      )
+    ));
   }
 
   /* AQUI SE MONTA EL MP4, ASI QUE LA TANDA ES 'render' Y NO 'video'.
@@ -9552,10 +9833,11 @@ async function aplicarRepaso() {
 function vistaCrearLight() {
   const e = encargoLight();
   const caja = h('div', { clase: 'light-form' });
+  caja.appendChild(migaDePanLight('Nuevo estilo'));
   caja.appendChild(h('div', { clase: 'light-cab' },
     h('button', {
-      clase: 'mini fantasma', title: 'Volver a tus estilos',
-      onclick: () => irALight('galeria'),
+      clase: 'mini fantasma', title: 'Volver al menú principal',
+      onclick: () => irAHome(),
     }, '‹ Volver'),
     h('h2', {}, 'Un estilo nuevo')));
 
@@ -9898,6 +10180,7 @@ function vistaGenerandoLight() {
   const trabajo = APP.trabajos[CLAVE_LIGHT] || {};
   const plan = APP.light.plan || {};
   const caja = h('div', { clase: 'light-generando' });
+  caja.appendChild(migaDePanLight(APP.light.abierto ? 'Rehaciendo estilo' : 'Montando el estilo'));
   caja.appendChild(h('h2', {}, APP.light.abierto ? 'Rehaciendo' : 'Montando el estilo'));
 
   const fraccion = Math.max(0, Math.min(1, Number(trabajo.progreso) || 0));
@@ -9936,6 +10219,10 @@ function vistaGenerandoLight() {
 
   caja.appendChild(h('div', { clase: 'fila' },
     h('button', {
+      clase: 'mini fantasma',
+      onclick: () => irAHome(),
+    }, '🏠 Menú principal'),
+    h('button', {
       clase: 'mini peligro',
       onclick: async () => { await cancelar(CLAVE_LIGHT); },
     }, 'Cancelar'),
@@ -9959,15 +10246,16 @@ function vistaPresetLight() {
   const ficha = fichaLight(APP.light.abierto);
   if (!ficha) {
     return h('div', { clase: 'caja-info' }, 'ese estilo ya no está. ',
-      h('button', { clase: 'mini', onclick: () => irALight('galeria') }, 'Volver'));
+      h('button', { clase: 'mini', onclick: () => irAHome() }, 'Volver al menú principal'));
   }
   const datos = ficha.datos || {};
   const origen = datos.origen || {};
   const caja = h('div', { clase: 'light-preset' });
+  caja.appendChild(migaDePanLight(ficha.nombre || ficha.id));
   caja.appendChild(h('div', { clase: 'light-cab' },
     h('button', {
-      clase: 'mini fantasma', onclick: () => irALight('galeria'),
-      title: 'Volver a tus estilos',
+      clase: 'mini fantasma', onclick: () => irAHome(),
+      title: 'Volver al menú principal',
     }, '‹ Volver'),
     h('h2', {}, ficha.nombre || ficha.id),
     h('span', { clase: 'crece' }),

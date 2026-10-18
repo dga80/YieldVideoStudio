@@ -1790,3 +1790,125 @@ def duracion_media(ruta):
     except ValueError:
         return 0.0
 
+
+def _podar_carpeta(carpeta, extensiones, dias_max, mb_max):
+    """Poda ficheros antiguos y aplica un tope de megas (LRU por mtime)."""
+    if not carpeta or not os.path.isdir(carpeta):
+        return 0, 0
+    ahora_s = time.time()
+    edad_max_s = max(0.0, float(dias_max)) * 86400.0
+    tope_bytes = int(max(0.0, float(mb_max)) * 1_000_000)
+    borrados, liberados = 0, 0
+    vivos = []
+    try:
+        nombres = os.listdir(carpeta)
+    except OSError:
+        return 0, 0
+
+    for nombre in nombres:
+        ruta = os.path.join(carpeta, nombre)
+        ext = os.path.splitext(nombre)[1].lower()
+        if nombre.endswith((".parcial", ".tmp")):
+            try:
+                if ahora_s - os.path.getmtime(ruta) > 3600:
+                    tam = os.path.getsize(ruta)
+                    os.remove(ruta)
+                    borrados += 1
+                    liberados += tam
+            except OSError:
+                pass
+            continue
+        if extensiones and ext not in extensiones:
+            continue
+        try:
+            st = os.stat(ruta)
+        except OSError:
+            continue
+        if not os.path.isfile(ruta):
+            continue
+        if edad_max_s and (ahora_s - st.st_mtime > edad_max_s):
+            try:
+                os.remove(ruta)
+                borrados += 1
+                liberados += st.st_size
+            except OSError:
+                pass
+        else:
+            vivos.append((st.st_mtime, st.st_size, ruta))
+
+    if tope_bytes > 0:
+        total = sum(item[1] for item in vivos)
+        if total > tope_bytes:
+            vivos.sort(key=lambda item: item[0])
+            for _, tam, ruta in vivos:
+                if total <= tope_bytes:
+                    break
+                try:
+                    os.remove(ruta)
+                    borrados += 1
+                    liberados += tam
+                    total -= tam
+                except OSError:
+                    pass
+    return borrados, liberados
+
+
+def limpiar_caches(dias_imagenes=3, max_mb_imagenes=400,
+                   dias_minis=7, max_mb_minis=80, dias_papelera=7):
+    """Mantiene a raya el disco del Estudio sin tocar lo que usan los proyectos.
+
+    1. Borra los `.48000.wav` temporales que hayan quedado en `banco/audio/musica/`.
+    2. Poda `banco/imagenes/` (por defecto >3 dias o >400 MB): cada proyecto ya
+       guarda su propia copia en `pasos/assets/v<N>/`, asi que el banco solo
+       necesita retener la ventana reciente.
+    3. Poda `cache/minis/` (>7 dias o >80 MB).
+    4. Vacia entradas de `_papelera` con mas de `dias_papelera` dias.
+    """
+    resumen = {"borrados": 0, "bytes": 0}
+    # 1. WAVs descomprimidos de musica (nunca hacen falta tras medir)
+    carpeta_musica = os.path.join(BANCO, "audio", "musica")
+    if os.path.isdir(carpeta_musica):
+        try:
+            for nombre in os.listdir(carpeta_musica):
+                if nombre.endswith(".48000.wav") or nombre.endswith(".parcial"):
+                    ruta = os.path.join(carpeta_musica, nombre)
+                    try:
+                        tam = os.path.getsize(ruta)
+                        os.remove(ruta)
+                        resumen["borrados"] += 1
+                        resumen["bytes"] += tam
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
+    # 2. Cache global de imagenes generadas
+    b_img, l_img = _podar_carpeta(
+        os.path.join(BANCO, "imagenes"), (".png",), dias_imagenes, max_mb_imagenes)
+    resumen["borrados"] += b_img
+    resumen["bytes"] += l_img
+
+    # 3. Cache de miniaturas de la interfaz
+    b_min, l_min = _podar_carpeta(
+        os.path.join(RAIZ_ESTUDIO, "cache", "minis"), (".jpg", ".jpeg"),
+        dias_minis, max_mb_minis)
+    resumen["borrados"] += b_min
+    resumen["bytes"] += l_min
+
+    # 4. Papelera antigua
+    papelera = os.path.join(RAIZ_ESTUDIO, "proyectos", "_papelera")
+    if os.path.isdir(papelera) and dias_papelera > 0:
+        ahora_s = time.time()
+        tope_s = float(dias_papelera) * 86400.0
+        try:
+            for nombre in os.listdir(papelera):
+                ruta = os.path.join(papelera, nombre)
+                try:
+                    if ahora_s - os.path.getmtime(ruta) > tope_s:
+                        shutil.rmtree(ruta, ignore_errors=True)
+                        resumen["borrados"] += 1
+                except OSError:
+                    pass
+        except OSError:
+            pass
+    return resumen

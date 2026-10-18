@@ -81,9 +81,10 @@ _fuentes = {}
 
 def fuente(nombre, tam, negrita=False):
     """Fuente real del sistema, la misma que luego pinta el navegador."""
-    clave = (nombre.lower(), int(tam), bool(negrita))
+    nombre_limpio = (nombre or "").split(",")[0].strip().lower()
+    clave = (nombre_limpio, int(tam), bool(negrita))
     if clave not in _fuentes:
-        rutas = FUENTES.get(nombre.lower()) or FUENTES["verdana"]
+        rutas = FUENTES.get(nombre_limpio) or FUENTES["verdana"]
         ruta = rutas[1 if negrita else 0] if rutas else ""
         fnt = None
         if ruta and os.path.isfile(ruta):

@@ -166,6 +166,18 @@ RETOQUES = {
         "params": "callouts.diseno",
         "lo_lee": "p7_callouts.diseno_de, y de ahí todo el envoltorio del texto",
     },
+    "fuente_subtitulo": {
+        "que_es": "qué tipografía llevan los subtítulos: sans (sin serif, "
+                  "limpia y recomendada por defecto) o serif (con serif).",
+        "ejemplos": ["subtítulos sin serif",
+                     "letra de los subtítulos sin remates",
+                     "subtítulos con serif"],
+        "tareas": ("grafismo", "muestra"),
+        "campos": ("valor",),
+        "imagenes": 0,
+        "params": "callouts.subtitulo_fuente",
+        "lo_lee": "p7_callouts.fuente_subtitulo, que la usa en el SVG",
+    },
     "una_referencia": {
         "que_es": "UNA sola de las seis referencias dibujadas. Se redibuja ESA "
                   "y las otras cinco se quedan exactamente como están, con la "
@@ -230,6 +242,7 @@ RETOQUES = {
 VALORES = {
     "tamano_subtitulo": ("pequeno", "normal", "grande", "enorme"),
     "set_grafismo": tuple(p7_callouts.SETS_DISENO),
+    "fuente_subtitulo": ("sans", "serif", "auto"),
 }
 
 #: El respaldo cuando algo no cuadra. Es el comportamiento de SIEMPRE, asi que
@@ -495,7 +508,8 @@ def params_de(retoques):
             continue
         clave = {"caja_subtitulo": "subtitulo_caja",
                  "tamano_subtitulo": "subtitulo_tam",
-                 "set_grafismo": "diseno"}.get(rid)
+                 "set_grafismo": "diseno",
+                 "fuente_subtitulo": "subtitulo_fuente"}.get(rid)
         if clave:
             cambios.setdefault("callouts", {})[clave] = entrada["valor"]
     return cambios

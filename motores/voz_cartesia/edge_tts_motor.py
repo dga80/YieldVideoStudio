@@ -11,6 +11,23 @@ import re
 import subprocess
 import edge_tts
 
+def _asegurar_endpoint():
+    """Garantiza el uso del endpoint activo de Edge (api.msedgeservices.com)
+    evitando el error 403 del endpoint heredado speech.platform.bing.com."""
+    try:
+        import edge_tts.communicate
+        import edge_tts.constants
+        nuevo_url = (
+            "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+            f"?Ocp-Apim-Subscription-Key={edge_tts.constants.TRUSTED_CLIENT_TOKEN}"
+        )
+        edge_tts.communicate.WSS_URL = nuevo_url
+        edge_tts.constants.WSS_URL = nuevo_url
+    except Exception:
+        pass
+
+_asegurar_endpoint()
+
 SR = 44100
 
 VOCES_EDGE = {
@@ -84,6 +101,7 @@ def resolver_velocidad(velocidad):
 
 
 async def _generar_stream(texto_limpio, voz, rate):
+    _asegurar_endpoint()
     comm = edge_tts.Communicate(texto_limpio, voice=voz, rate=rate, boundary="WordBoundary")
     mp3_buf = bytearray()
     palabras = []

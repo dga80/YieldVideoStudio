@@ -50,6 +50,82 @@ RAIZ_ESTUDIO = os.path.dirname(os.path.abspath(__file__))
 if RAIZ_ESTUDIO not in sys.path:
     sys.path.insert(0, RAIZ_ESTUDIO)
 
+# ==============================================================================
+# Protección contra cierre de Terminal / desconexión de TTY (Errno 5 / EIO / EPIPE)
+# ==============================================================================
+class SafeStream:
+    """Evita que el servidor y los hilos de renderizado se caigan con OSError(Errno 5)
+    o BrokenPipeError si se cierra la ventana de Terminal en segundo plano.
+    Además, guarda una copia limpia en studio.log para diagnóstico."""
+    def __init__(self, original_stream, log_file=None):
+        self._orig = original_stream
+        self._log = log_file
+
+    def write(self, s):
+        try:
+            if self._orig:
+                self._orig.write(s)
+        except (OSError, BrokenPipeError, ValueError):
+            pass
+        if self._log:
+            try:
+                self._log.write(s)
+                self._log.flush()
+            except Exception:
+                pass
+        return len(s) if isinstance(s, (str, bytes)) else 0
+
+    def writelines(self, lines):
+        for line in lines:
+            self.write(line)
+
+    def flush(self):
+        try:
+            if self._orig:
+                self._orig.flush()
+        except (OSError, BrokenPipeError, ValueError):
+            pass
+        if self._log:
+            try:
+                self._log.flush()
+            except Exception:
+                pass
+
+    @property
+    def encoding(self):
+        return getattr(self._orig, "encoding", "utf-8")
+
+    @property
+    def errors(self):
+        return getattr(self._orig, "errors", "replace")
+
+    @property
+    def closed(self):
+        return getattr(self._orig, "closed", False)
+
+    def isatty(self):
+        try:
+            return self._orig.isatty() if self._orig else False
+        except Exception:
+            return False
+
+    def fileno(self):
+        try:
+            return self._orig.fileno()
+        except Exception:
+            raise OSError(9, "Bad file descriptor")
+
+    def __getattr__(self, name):
+        return getattr(self._orig, name)
+
+try:
+    _log_f = open(os.path.join(RAIZ_ESTUDIO, "studio.log"), "a", encoding="utf-8", errors="replace")
+except Exception:
+    _log_f = None
+
+sys.stdout = SafeStream(sys.stdout, _log_f)
+sys.stderr = SafeStream(sys.stderr, _log_f)
+
 from fastapi import Body, FastAPI, Query, Request  # noqa: E402
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 from fastapi.responses import (FileResponse, HTMLResponse,  # noqa: E402
@@ -401,6 +477,11 @@ def _correr_paso(avisar, ctx, paso_id, unidades, opciones=None):
         "retiradas": retiradas or [],
         "salidas_resumidas": recortadas,
     })
+    if paso_id in ("assets", "render") and PASOS_MODULOS is not None:
+        try:
+            PASOS_MODULOS.medios.limpiar_caches()
+        except Exception:  # noqa: BLE001
+            pass
     return {
         "version": version,
         "resumen": str(salidas.get("resumen") or ""),
@@ -1019,7 +1100,8 @@ def vaciar_papelera(confirmar: bool = Query(default=False)):
     carpetas = ([n for n in sorted(os.listdir(base))
                  if os.path.isdir(os.path.join(base, n))]
                 if os.path.isdir(base) else [])
-    total = [_peso_de(os.path.join(base, n)) for n in carpetas]
+    rutas = [os.path.join(base, n) for n in carpetas]
+    total = [_peso_de(r) for r in rutas]
     ficheros = sum(f for f, _ in total)
     tamano = sum(t for _, t in total)
     if not confirmar:
@@ -1027,6 +1109,9 @@ def vaciar_papelera(confirmar: bool = Query(default=False)):
                             f"ficheros ({tamano / (1024 * 1024):.1f} MB), y no se "
                             f"puede deshacer: repite la llamada con confirmar=true",
                        {"proyectos": carpetas, "ficheros": ficheros, "bytes": tamano})
+    extra_f, extra_b = _purgar_rastro_proyecto(rutas)
+    ficheros += extra_f
+    tamano += extra_b
     borrados, fallidos = [], []
     for nombre in carpetas:
         try:
@@ -1045,15 +1130,49 @@ def vaciar_papelera(confirmar: bool = Query(default=False)):
 
 
 @app.delete("/api/proyectos/{pid}")
-def apartar_proyecto(pid: str):
-    """Mueve el proyecto a la papelera. No borra nada."""
+def apartar_proyecto(pid: str, definitivo: bool = Query(default=False),
+                     confirmar: bool = Query(default=False)):
+    """Mueve el proyecto a la papelera, o lo elimina por completo si definitivo=true."""
     ctx = contexto(pid)
     activos = [t for t in ctx.gestor.listar(activos=True)]
     if activos:
+        accion = "eliminarlo" if definitivo else "apartarlo"
         raise ErrorApi(409, f"'{pid}' tiene {len(activos)} trabajo(s) en marcha: "
-                            f"cancelalos antes de apartarlo",
+                            f"cancelalos antes de {accion}",
                        {"trabajos": [t.get("id") for t in activos]})
     origen = ctx.proyecto.raiz
+    if definitivo:
+        base_pap = raiz_papelera()
+        copias_pap = ([os.path.join(base_pap, n) for n in os.listdir(base_pap)
+                       if n.startswith(f"{pid}__") and os.path.isdir(os.path.join(base_pap, n))]
+                      if os.path.isdir(base_pap) else [])
+        rutas_borrar = [origen] + copias_pap
+        pesos = [_peso_de(r) for r in rutas_borrar]
+        ficheros = sum(f for f, _ in pesos)
+        tamano = sum(t for _, t in pesos)
+        if not confirmar:
+            raise ErrorApi(409, f"esto elimina '{pid}' ({ficheros} ficheros, "
+                                f"{tamano / (1024 * 1024):.1f} MB) y todo su rastro: "
+                                f"repite la llamada con confirmar=true",
+                           {"id": pid, "ficheros": ficheros, "bytes": tamano,
+                            "megas": round(tamano / (1024 * 1024), 1)})
+        extra_f, extra_b = _purgar_rastro_proyecto(rutas_borrar, pid_excluir=pid)
+        ficheros += extra_f
+        tamano += extra_b
+        try:
+            for r in rutas_borrar:
+                if os.path.exists(r):
+                    shutil.rmtree(r)
+        except OSError as fallo:
+            raise ErrorApi(500, f"no se ha podido eliminar el proyecto: {fallo}")
+        with _LOCK:
+            _CONTEXTOS.pop(str(pid), None)
+        anotar_global("proyecto_borrado",
+                      {"id": pid, "definitivo": True, "ficheros": ficheros, "bytes": tamano},
+                      proyecto=pid)
+        return {"borrado": pid, "id": pid, "ficheros": ficheros, "bytes": tamano,
+                "megas": round(tamano / (1024 * 1024), 1)}
+
     marca = time.strftime("%Y%m%dT%H%M%S")
     destino = os.path.join(raiz_papelera(), f"{pid}__{marca}")
     # El apunte va al log GLOBAL y no a la bitacora del proyecto, que es lo que
@@ -1115,8 +1234,7 @@ def restaurar_proyecto(carpeta: str):
 # trabajo: se lleva el guion, las tomas de voz, las imagenes generadas y el
 # render, o sea todo lo que se pago por generar. Por eso pide confirmacion
 # explicita en el cuerpo y no se puede disparar por accidente con un DELETE
-# suelto, y por eso solo alcanza a lo que YA esta en la papelera: un proyecto
-# vivo hay que apartarlo antes, que es un paso mas y reversible.
+# suelto.
 
 def _carpeta_de_papelera(carpeta):
     """Ruta real de una carpeta de la papelera, validada. Nunca sale de ahi."""
@@ -1144,6 +1262,124 @@ def _peso_de(ruta):
     return ficheros, tamano
 
 
+def _extraer_referencias_proyecto(ruta_proy):
+    """Extrae firmas de imagenes (16 hex) e ids de Jamendo de los JSON clave."""
+    firmas, musicas = set(), set()
+    candidatos = [os.path.join(ruta_proy, "estado.json")]
+    for sub in ("assets", "render"):
+        ver_dir = os.path.join(ruta_proy, "pasos", sub, "_versiones")
+        if os.path.isdir(ver_dir):
+            try:
+                candidatos.extend(os.path.join(ver_dir, n) for n in os.listdir(ver_dir)
+                                  if n.endswith(".json"))
+            except OSError:
+                pass
+    for jf in candidatos:
+        if not os.path.isfile(jf):
+            continue
+        try:
+            with open(jf, "r", encoding="utf-8", errors="ignore") as fh:
+                txt = fh.read()
+            firmas.update(re.findall(r"\b[0-9a-f]{16}\b", txt))
+            for m in re.findall(r"jamendo_(\d+)", txt):
+                musicas.add(m)
+        except OSError:
+            pass
+    return firmas, musicas
+
+
+def _purgar_rastro_proyecto(rutas_borrar, pid_excluir=None):
+    """Borra miniaturas (cache/minis), imagenes (banco/imagenes) y musica asociadas."""
+    extra_f = extra_b = 0
+    firmas_borrar, musicas_borrar = set(), set()
+    carpeta_minis = os.path.join(RAIZ_ESTUDIO, "cache", "minis")
+
+    for ruta_proy in rutas_borrar or []:
+        if not os.path.isdir(ruta_proy):
+            continue
+        f_proy, m_proy = _extraer_referencias_proyecto(ruta_proy)
+        firmas_borrar.update(f_proy)
+        musicas_borrar.update(m_proy)
+        for base, _, nombres in os.walk(ruta_proy):
+            for nombre in nombres:
+                ext = os.path.splitext(nombre)[1].lower()
+                if ext in (".png", ".jpg", ".jpeg", ".webp"):
+                    ruta_img = os.path.join(base, nombre)
+                    try:
+                        mtime = int(os.path.getmtime(ruta_img))
+                        real = os.path.realpath(ruta_img)
+                    except OSError:
+                        continue
+                    for ancho in (512, 1024):
+                        clave = hashlib.sha1(
+                            f"{real}|{mtime}|{ancho}".encode("utf-8")).hexdigest()
+                        mini = os.path.join(carpeta_minis, f"{clave}.jpg")
+                        if os.path.exists(mini):
+                            try:
+                                extra_b += os.path.getsize(mini)
+                                os.remove(mini)
+                                extra_f += 1
+                            except OSError:
+                                pass
+                elif ext == ".json":
+                    try:
+                        with open(os.path.join(base, nombre), "r",
+                                  encoding="utf-8", errors="ignore") as fh:
+                            firmas_borrar.update(
+                                re.findall(r'"firma"\s*:\s*"([0-9a-f]{16})"', fh.read()))
+                    except OSError:
+                        pass
+
+    if not firmas_borrar and not musicas_borrar:
+        return extra_f, extra_b
+
+    # Comprobar que otro proyecto vivo no comparta la misma firma o pista
+    firmas_vivas, musicas_vivas = set(), set()
+    base_proy = raiz_proyectos()
+    if os.path.isdir(base_proy):
+        try:
+            for nombre in os.listdir(base_proy):
+                if nombre in (pid_excluir, NOMBRE_PAPELERA, "_imagenes_aportadas") or nombre.startswith("."):
+                    continue
+                r_vivo = os.path.join(base_proy, nombre)
+                if os.path.isdir(r_vivo) and os.path.abspath(r_vivo) not in {os.path.abspath(x) for x in rutas_borrar}:
+                    fv, mv = _extraer_referencias_proyecto(r_vivo)
+                    firmas_vivas.update(fv)
+                    musicas_vivas.update(mv)
+        except OSError:
+            pass
+
+    banco_raiz = (PASOS_MODULOS.medios.BANCO
+                  if PASOS_MODULOS is not None and hasattr(PASOS_MODULOS, "medios")
+                  else os.path.join(RAIZ_ESTUDIO, "banco"))
+    carpeta_img = os.path.join(banco_raiz, "imagenes")
+    if os.path.isdir(carpeta_img):
+        for firma in firmas_borrar - firmas_vivas:
+            cand = os.path.join(carpeta_img, f"{firma}.png")
+            if os.path.exists(cand):
+                try:
+                    extra_b += os.path.getsize(cand)
+                    os.remove(cand)
+                    extra_f += 1
+                except OSError:
+                    pass
+
+    carpeta_mus = os.path.join(banco_raiz, "audio", "musica")
+    if os.path.isdir(carpeta_mus):
+        for mid in musicas_borrar - musicas_vivas:
+            for ext in (".mp3", ".48000.wav"):
+                cand = os.path.join(carpeta_mus, f"jamendo_{mid}{ext}")
+                if os.path.exists(cand):
+                    try:
+                        extra_b += os.path.getsize(cand)
+                        os.remove(cand)
+                        extra_f += 1
+                    except OSError:
+                        pass
+
+    return extra_f, extra_b
+
+
 @app.get("/api/proyectos/papelera/{carpeta}")
 def mirar_papelera(carpeta: str):
     """Que hay dentro de un proyecto apartado, para poder decir que se pierde."""
@@ -1166,6 +1402,9 @@ def borrar_de_papelera(carpeta: str, confirmar: bool = Query(default=False)):
                             f"confirmar=true si es lo que quieres",
                        {"carpeta": carpeta, "ficheros": ficheros, "bytes": tamano})
     ficha = _ficha_papelera(carpeta)
+    extra_f, extra_b = _purgar_rastro_proyecto([ruta], pid_excluir=ficha.get("id"))
+    ficheros += extra_f
+    tamano += extra_b
     try:
         shutil.rmtree(ruta)
     except OSError as fallo:
@@ -3310,12 +3549,15 @@ def leer_diseno(pid: str):
             guia, {**p7.PARAMS_POR_DEFECTO["paleta"],
                    **(ctx.estado.params("callouts") or {}).get("paleta", {})}),
         "fijados": ((ctx.estado.params("callouts") or {}).get("paleta") or {}).get("fijados") or {},
-        # Y el tamano del subtitulo, que es lo unico que queda por elegir del
+        # Y el tamano y la tipografia del subtitulo, que es lo unico que queda por elegir del
         # grafismo. Vive en los params de callouts, o sea que cambiarlo no deja
         # obsoleta ni una imagen: solo las capas, que son gratis.
         "subtitulo_tam": (ctx.estado.params("callouts") or {}).get(
             "subtitulo_tam") or "normal",
         "subtitulo_tamanos": sorted(p7.SUB_TAMANOS),
+        "subtitulo_fuente": (ctx.estado.params("callouts") or {}).get(
+            "subtitulo_fuente") or p7.SUB_TIPOGRAFIA_POR_DEFECTO,
+        "subtitulo_fuentes": list(p7.SUB_TIPOGRAFIAS_VALIDAS),
     }
 
 
@@ -3404,6 +3646,14 @@ def guardar_plan_callouts(pid: str, cuerpo: dict = Body(default=None)):
                                 f"Los tamanos son: {', '.join(sorted(p7.SUB_TAMANOS))}")
         cambios["subtitulo_tam"] = nombre
         hecho.append("subtitulo_tam")
+    if datos.get("subtitulo_fuente"):
+        fuente_raw = str(datos["subtitulo_fuente"]).strip().lower()
+        if fuente_raw in p7.SUB_TIPOGRAFIAS_VALIDAS or fuente_raw in p7.SUB_TIPOGRAFIAS:
+            cambios["subtitulo_fuente"] = "serif" if "serif" in fuente_raw and "sin" not in fuente_raw and "sans" not in fuente_raw else ("auto" if fuente_raw == "auto" else "sans")
+            hecho.append("subtitulo_fuente")
+        else:
+            raise ErrorApi(400, f"tipografia de subtitulo desconocida: {fuente_raw}. "
+                                f"Las opciones son: {', '.join(p7.SUB_TIPOGRAFIAS_VALIDAS)}")
     if datos.get("diseno"):
         if datos["diseno"] not in p7.SETS_DISENO:
             raise ErrorApi(400, f"set de diseno desconocido: {datos['diseno']}. "
@@ -3430,13 +3680,14 @@ def guardar_plan_callouts(pid: str, cuerpo: dict = Body(default=None)):
         actual["fijados"] = fijados
         cambios["paleta"] = actual
     if not cambios and not hecho:
-        raise ErrorApi(400, "hace falta 'diseno', 'paleta' o 'subtitulo_tam'")
+        raise ErrorApi(400, "hace falta 'diseno', 'paleta', 'subtitulo_tam' o 'subtitulo_fuente'")
     if cambios:
         ctx.estado.actualizar_params("callouts", cambios)
     hecho.extend(cambios)
     ctx.bitacora.anotar("grafismo_guardado", "callouts", {
         "diseno": cambios.get("diseno"),
-        "subtitulo_tam": cambios.get("subtitulo_tam")})
+        "subtitulo_tam": cambios.get("subtitulo_tam"),
+        "subtitulo_fuente": cambios.get("subtitulo_fuente")})
     return {"guardado": hecho, "estado": ctx.estado.estado_de("callouts"),
             "aguas_abajo": {h: ctx.estado.unidades_obsoletas(h)
                             for h in descendientes_de("callouts")}}
@@ -4360,7 +4611,8 @@ def _medidor_de_subtitulo(ctx, plan):
         params_callouts = ctx.estado.params("callouts") or {}
         _, ficha_diseno = p7.diseno_de(params_callouts)
         # el cuerpo de ESTA salida: en vertical es mas grande (p7.escala_subtitulo)
-        medir = p7._medidor((ficha_diseno or {}).get("fuente") or "Verdana",
+        fnt_sub = p7.fuente_subtitulo(params_callouts, ficha_diseno)
+        medir = p7._medidor(fnt_sub,
                             p7.tamano_subtitulo(params_callouts, salida),
                             negrita=p7.SUB_PESO >= 600)
         return medir, banda
@@ -6991,6 +7243,10 @@ def aplicar_preset_canal(pid: str, preset_id: str):
         "pasos": sorted(cambios),
         "cambiados": sorted(p for p, c in cambiados.items() if c)})
     afectados = {p for p, c in cambiados.items() if c}
+    if ctx.proyecto.config.get("video_light"):
+        ctx.proyecto.config["estilo_light"] = preset_id
+        ctx.proyecto.guardar_config()
+
     return {
         "aplicado": preset_id, "preset": presets.publicar(ficha),
         "moodboard_devuelto": devueltas.get("ejes") or [],
@@ -7517,7 +7773,8 @@ def _correr_light_grafismo(avisar, ctx, encargo):
         diseno, porque = elegido, "elegido a mano; no se deduce de la guía"
     cambios = {"diseno": diseno, "paleta": paleta,
                "subtitulo_tam": puestos.get("subtitulo_tam") or "normal",
-               "subtitulo_caja": puestos.get("subtitulo_caja", "auto")}
+               "subtitulo_caja": puestos.get("subtitulo_caja", "auto"),
+               "subtitulo_fuente": puestos.get("subtitulo_fuente") or p7.SUB_TIPOGRAFIA_POR_DEFECTO}
     ctx.estado.actualizar_params("callouts", cambios)
     ctx.bitacora.anotar("grafismo_deducido", "callouts",
                         {"diseno": diseno, "por_que": porque})
@@ -9894,6 +10151,17 @@ def main():
     print(f"proyectos en {raiz_proyectos()}")
     if ERROR_PASOS:
         print(f"AVISO: los pasos no se han cargado -> {ERROR_PASOS}")
+    elif PASOS_MODULOS is not None:
+        def _bucle_limpieza():
+            while True:
+                try:
+                    PASOS_MODULOS.medios.limpiar_caches()
+                except Exception:  # noqa: BLE001
+                    pass
+                time.sleep(6 * 3600)
+
+        threading.Thread(target=_bucle_limpieza, daemon=True,
+                         name="limpieza_caches").start()
     try:
         uvicorn.run(app, host=argumentos.host, port=argumentos.puerto,
                     log_level="warning")

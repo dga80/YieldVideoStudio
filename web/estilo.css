@@ -107,7 +107,7 @@ a { color: var(--acento); }
 }
 #cabecera h1 {
   font-size: 12px; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--acento); flex: 0 0 auto;
+  color: var(--acento); flex: 0 0 auto; cursor: pointer;
 }
 #cabecera button { font-size: 12px; padding: 3px 8px; }
 /* el nombre del proyecto cede sitio antes que el medidor de coste, que es de
@@ -1013,7 +1013,7 @@ video { width: 100%; border-radius: 9px; border: 1px solid var(--linea); backgro
     flex: 0 1 auto; min-width: 0; max-width: 82px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #coste, #btn-refrescar, #btn-bitacora { flex: 0 0 auto; }
+  #btn-inicio, #coste, #btn-refrescar, #btn-bitacora { flex: 0 0 auto; }
   /* El medidor se queda con el TOTAL y la barra de presupuesto, que es lo que
      se mira de reojo; los tres proveedores estan a un toque, en el desglose. */
   #coste { gap: 7px; padding: 3px 8px; }
@@ -2596,4 +2596,134 @@ button.avisa:hover:not(:disabled) { border-color: var(--aviso); }
   font-size: 13px; font-weight: 600; padding: 7px 16px;
   box-shadow: 0 2px 8px rgba(108, 140, 255, 0.25);
 }
+
+/* ---- Monitorización y Streaming en Vivo de Imágenes ---- */
+.badge-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 93, 93, 0.15);
+  border: 1px solid rgba(255, 93, 93, 0.4);
+  color: #ff7e7e;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  animation: pulsoLive 2s infinite ease-in-out;
+}
+@keyframes pulsoLive {
+  0%, 100% { opacity: 1; border-color: rgba(255, 93, 93, 0.4); }
+  50% { opacity: 0.75; border-color: rgba(255, 93, 93, 0.8); }
+}
+.boton-parar-live {
+  font-weight: 600;
+  border-color: rgba(255, 93, 93, 0.6) !important;
+  background: rgba(255, 93, 93, 0.18) !important;
+  color: #ff9b9b !important;
+  box-shadow: 0 0 10px rgba(255, 93, 93, 0.2);
+}
+.boton-parar-live:hover {
+  background: rgba(255, 93, 93, 0.35) !important;
+  color: #fff !important;
+}
+
+.banner-live-generacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(90deg, rgba(32, 42, 68, 0.85) 0%, rgba(20, 22, 28, 0.95) 100%);
+  border: 1px solid var(--acento);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.banner-live-generacion .live-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.banner-live-generacion .punto-live {
+  width: 9px;
+  height: 9px;
+  background-color: var(--malo);
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulsoPunto 1.5s infinite ease-in-out;
+}
+@keyframes pulsoPunto {
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(255, 93, 93, 0.7); }
+  50% { transform: scale(1.15); opacity: 0.8; box-shadow: 0 0 0 6px rgba(255, 93, 93, 0); }
+}
+.banner-live-generacion .live-acciones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tira-planos.interactiva {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 2px;
+  margin-top: 10px;
+  scrollbar-width: thin;
+}
+.tira-planos.interactiva .item-plano {
+  position: relative;
+  flex: 0 0 96px;
+  height: 54px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 2px solid var(--linea);
+  background: var(--hueco);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.tira-planos.interactiva .item-plano:hover {
+  transform: translateY(-2px);
+  border-color: var(--tenue);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+.tira-planos.interactiva .item-plano.activo {
+  border-color: var(--acento);
+  box-shadow: 0 0 0 2px rgba(108, 140, 255, 0.4);
+}
+.tira-planos.interactiva .item-plano img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tira-planos.interactiva .item-plano .tag-sid {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(2px);
+  color: var(--texto);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.marco-video .sello.interactivo {
+  cursor: pointer;
+  background: rgba(108, 140, 255, 0.85);
+  color: #fff;
+}
+.marco-video .sello.interactivo:hover {
+  background: var(--acento);
+}
+.caja-info.aviso-parada {
+  margin-top: 14px;
+  border-left: 3px solid var(--aviso);
+}
+
 

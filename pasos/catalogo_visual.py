@@ -153,6 +153,9 @@ entre un plano y el siguiente.
     el oficio, la edad que se deduzca. Sin nombres de personas reales concretas
     -- si el guion nombra a alguien que existe, describelo por su oficio y su
     edad aparente, no por su parecido --, y sin rasgos que el guion contradiga.
+    En estilos realistas o documentales, si el guion no dice otra cosa, fija
+    siempre la etnia en positivo (por defecto caucásica / europea: «Caucasian man/woman...»,
+    o la coherente con el relato) para que el generador no asuma sesgos automáticos.
     Y ponlo en 'avisos': «se invento la descripcion de X, el guion no la da», que
     es lo que permite corregirla mirando en vez de descubrirla en el video.
   - Si el mismo personaje aparece en dos edades muy distintas (de nino y de

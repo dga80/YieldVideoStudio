@@ -229,6 +229,21 @@ def _set_de_diseno(valor):
     return nombre if nombre in p7_callouts.SETS_DISENO else None
 
 
+def _fuente_subtitulo(valor):
+    try:
+        from . import p7_callouts                             # noqa: PLC0415
+    except ImportError:                                       # pragma: no cover
+        import p7_callouts                                    # noqa: PLC0415
+    nombre = str(valor or "").strip().lower()
+    if nombre in ("serif", "con serif", "con-serif"):
+        return "serif"
+    if nombre in ("sans", "sin serif", "sans-serif", "sin-serif"):
+        return "sans"
+    if nombre == "auto":
+        return "auto"
+    return "sans"
+
+
 CAMBIOS = {
     # ---------------------------------------------------------------- imagen
     "feedback_plano": {
@@ -273,6 +288,12 @@ CAMBIOS = {
         "que_es": "el tamaño del subtítulo: pequeno, normal, grande o enorme",
         "rehacer": ["callouts", "render"],
         "campos": {"valor": _tamano_subtitulo},
+    },
+    "subtitulo_fuente": {
+        "ambito": "subtitulo",
+        "que_es": "la tipografía del subtítulo: sans (sin serif, recomendada) o serif (con serif)",
+        "rehacer": ["callouts", "render"],
+        "campos": {"valor": _fuente_subtitulo},
     },
     "grafismo": {
         "ambito": "subtitulo",
@@ -385,6 +406,7 @@ DESTINOS = {
     "cartela_texto": ("assets", "unidades.escena:*.cartela"),
     "quitar_cartela": ("assets", "unidades.escena:*.cartela"),
     "subtitulo_tam": ("callouts", "subtitulo_tam"),
+    "subtitulo_fuente": ("callouts", "subtitulo_fuente"),
     "grafismo": ("callouts", "diseno"),
     "subtitulo_texto": ("callouts", "unidades.escena:*.subtitulo_texto"),
     "transicion_duracion": ("render", "duracion_transicion"),

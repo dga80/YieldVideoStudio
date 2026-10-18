@@ -63,10 +63,15 @@ TOKENS_ENTRADA_POR_IMAGEN = 5114
 #: Generadores de imágenes soportados
 GENERADORES_IMAGEN = ("agnes", "siliconflow", "auto")
 
+#: Tipografías de subtítulo soportadas: sans (sin serif, por defecto) | serif (con serif)
+FUENTES_SUBTITULO = ("sans", "serif")
+
 POR_DEFECTO = {
     "calidad_imagen": "low",
     # Generador de imágenes preferido: agnes (Agnes AI) | siliconflow | auto (auto fallback)
     "generador_imagen": "agnes",
+    # Tipografía de subtítulos preferida: sans (sin serif) | serif (con serif)
+    "subtitulo_fuente": "sans",
     # Si ya se ha pasado por la guia de inicio (las tarjetas que piden las
     # claves al entrar por primera vez). Vive aqui y no en el navegador
     # porque es de la instalacion, no de la pantalla: desde el movil no hay
@@ -90,6 +95,8 @@ def leer():
         salida["calidad_imagen"] = POR_DEFECTO["calidad_imagen"]
     if salida.get("generador_imagen") not in GENERADORES_IMAGEN:
         salida["generador_imagen"] = POR_DEFECTO["generador_imagen"]
+    if salida.get("subtitulo_fuente") not in FUENTES_SUBTITULO:
+        salida["subtitulo_fuente"] = POR_DEFECTO["subtitulo_fuente"]
     salida["onboarding_visto"] = bool(salida.get("onboarding_visto"))
     salida["carpeta_proyectos"] = str(salida.get("carpeta_proyectos") or "").strip()
     return salida
@@ -113,6 +120,9 @@ def guardar(cambios):
         if clave == "generador_imagen" and valor not in GENERADORES_IMAGEN:
             raise ValueError(
                 f"generador {valor!r}: solo {', '.join(GENERADORES_IMAGEN)}")
+        if clave == "subtitulo_fuente" and valor not in FUENTES_SUBTITULO:
+            raise ValueError(
+                f"fuente de subtítulo {valor!r}: solo {', '.join(FUENTES_SUBTITULO)}")
         if clave == "onboarding_visto" and not isinstance(valor, bool):
             raise ValueError("onboarding_visto es verdadero o falso")
         if clave == "carpeta_proyectos" and not isinstance(valor, str):
